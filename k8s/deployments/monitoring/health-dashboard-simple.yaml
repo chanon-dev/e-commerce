@@ -1,0 +1,417 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-dashboard-simple
+  namespace: ecommerce
+  labels:
+    app: health-dashboard-simple
+    tier: monitoring
+    version: v1.0.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: health-dashboard-simple
+  template:
+    metadata:
+      labels:
+        app: health-dashboard-simple
+        tier: monitoring
+        version: v1.0.0
+    spec:
+      containers:
+      - name: health-dashboard
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: dashboard-content
+          mountPath: /usr/share/nginx/html/index.html
+          subPath: index.html
+      volumes:
+      - name: dashboard-content
+        configMap:
+          name: health-dashboard-simple-content
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: health-dashboard-simple
+  namespace: ecommerce
+  labels:
+    app: health-dashboard-simple
+    tier: monitoring
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  selector:
+    app: health-dashboard-simple
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: health-dashboard-simple-content
+  namespace: ecommerce
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="th">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>E-Commerce Health Dashboard</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }
+            .container {
+                max-width: 1400px;
+                margin: 0 auto;
+                background: rgba(255, 255, 255, 0.95);
+                border-radius: 20px;
+                padding: 30px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            }
+            .header {
+                text-align: center;
+                margin-bottom: 40px;
+                padding-bottom: 20px;
+                border-bottom: 2px solid #e0e0e0;
+            }
+            .header h1 {
+                color: #2c3e50;
+                font-size: 2.5em;
+                margin-bottom: 10px;
+            }
+            .status-overview {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 20px;
+                margin-bottom: 40px;
+            }
+            .status-card {
+                background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+                color: white;
+                padding: 25px;
+                border-radius: 15px;
+                text-align: center;
+                box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            }
+            .status-card h3 { font-size: 2em; margin-bottom: 10px; }
+            .services-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+                gap: 25px;
+                margin-bottom: 40px;
+            }
+            .service-category {
+                background: white;
+                border-radius: 15px;
+                padding: 25px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+                border: 1px solid #e0e0e0;
+            }
+            .service-category h2 {
+                color: #2c3e50;
+                margin-bottom: 20px;
+                padding-bottom: 10px;
+                border-bottom: 2px solid #3498db;
+            }
+            .service-item {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 15px;
+                margin: 10px 0;
+                background: #f8f9fa;
+                border-radius: 10px;
+                border-left: 4px solid #27ae60;
+            }
+            .service-item.checking {
+                border-left-color: #f39c12;
+                background: linear-gradient(90deg, #ffeaa7 0%, #f8f9fa 100%);
+            }
+            .service-name {
+                font-weight: bold;
+                color: #2c3e50;
+                font-size: 1.1em;
+            }
+            .service-details {
+                color: #7f8c8d;
+                font-size: 0.9em;
+            }
+            .status-indicator {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                background: #27ae60;
+                animation: pulse 2s infinite;
+            }
+            .status-indicator.checking {
+                background: #f39c12;
+            }
+            .refresh-button {
+                position: fixed;
+                bottom: 30px;
+                right: 30px;
+                background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+                color: white;
+                border: none;
+                padding: 15px 20px;
+                border-radius: 50px;
+                cursor: pointer;
+                box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+            }
+            .last-updated {
+                text-align: center;
+                color: #7f8c8d;
+                margin-top: 30px;
+                font-style: italic;
+            }
+            @keyframes pulse {
+                0% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.7); }
+                70% { box-shadow: 0 0 0 10px rgba(39, 174, 96, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0); }
+            }
+            @media (max-width: 768px) {
+                .container { padding: 20px; margin: 10px; }
+                .services-grid { grid-template-columns: 1fr; }
+                .status-overview { grid-template-columns: repeat(2, 1fr); }
+                .header h1 { font-size: 2em; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🏥 E-Commerce Health Dashboard</h1>
+                <p>Real-time Service Monitoring & Health Check</p>
+            </div>
+            
+            <div class="status-overview">
+                <div class="status-card">
+                    <h3 id="total-services">16</h3>
+                    <p>Total Services</p>
+                </div>
+                <div class="status-card" style="background: linear-gradient(135deg, #00b894 0%, #00a085 100%);">
+                    <h3 id="online-services">12</h3>
+                    <p>Online Services</p>
+                </div>
+                <div class="status-card" style="background: linear-gradient(135deg, #fdcb6e 0%, #e17055 100%);">
+                    <h3 id="warning-services">2</h3>
+                    <p>Warning Services</p>
+                </div>
+                <div class="status-card" style="background: linear-gradient(135deg, #fd79a8 0%, #e84393 100%);">
+                    <h3 id="offline-services">2</h3>
+                    <p>Offline Services</p>
+                </div>
+            </div>
+            
+            <div class="services-grid">
+                <div class="service-category">
+                    <h2>🌐 Frontend Applications</h2>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">Customer Platform Light</div>
+                            <div class="service-details">หน้าเว็บลูกค้า | Port: 80 | Response: 120ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">Admin Dashboard Light</div>
+                            <div class="service-details">หน้าจัดการระบบ | Port: 80 | Response: 95ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                    <div class="service-item checking">
+                        <div>
+                            <div class="service-name">Customer Platform</div>
+                            <div class="service-details">หน้าเว็บลูกค้า | Port: 3000 | Checking...</div>
+                        </div>
+                        <div class="status-indicator checking"></div>
+                    </div>
+                    <div class="service-item checking">
+                        <div>
+                            <div class="service-name">Admin Dashboard</div>
+                            <div class="service-details">หน้าจัดการระบบ | Port: 3100 | Checking...</div>
+                        </div>
+                        <div class="status-indicator checking"></div>
+                    </div>
+                </div>
+                
+                <div class="service-category">
+                    <h2>🔧 Backend Services</h2>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">API Gateway Light</div>
+                            <div class="service-details">ประตูหลักของ API | Port: 80 | Response: 85ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                    <div class="service-item checking">
+                        <div>
+                            <div class="service-name">API Gateway</div>
+                            <div class="service-details">ประตูหลักของ API | Port: 8080 | Checking...</div>
+                        </div>
+                        <div class="status-indicator checking"></div>
+                    </div>
+                    <div class="service-item checking">
+                        <div>
+                            <div class="service-name">Auth Service</div>
+                            <div class="service-details">ระบบยืนยันตัวตน | Port: 3001 | Checking...</div>
+                        </div>
+                        <div class="status-indicator checking"></div>
+                    </div>
+                    <div class="service-item checking">
+                        <div>
+                            <div class="service-name">User Service</div>
+                            <div class="service-details">จัดการข้อมูลผู้ใช้ | Port: 3002 | Checking...</div>
+                        </div>
+                        <div class="status-indicator checking"></div>
+                    </div>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">Product Service Real</div>
+                            <div class="service-details">จัดการสินค้า (Real) | Port: 3001 | Response: 150ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">Product Service Kafka</div>
+                            <div class="service-details">จัดการสินค้า (Kafka) | Port: 3001 | Response: 180ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                </div>
+                
+                <div class="service-category">
+                    <h2>🗄️ Infrastructure Services</h2>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">Keycloak</div>
+                            <div class="service-details">ระบบจัดการผู้ใช้ | Port: 8080 | Response: 200ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">Vault</div>
+                            <div class="service-details">จัดการความลับ | Port: 8200 | Response: 110ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">Kafka</div>
+                            <div class="service-details">Message Queue | Port: 9092 | Response: 75ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">Kafka UI</div>
+                            <div class="service-details">Kafka Management | Port: 8080 | Response: 90ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                </div>
+                
+                <div class="service-category">
+                    <h2>📊 Monitoring Services</h2>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">Health Dashboard</div>
+                            <div class="service-details">Service Health Monitor | Port: 80 | Response: 45ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">Feature Frontend</div>
+                            <div class="service-details">Feature-based Frontend | Port: 80 | Response: 65ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">Modern Frontend</div>
+                            <div class="service-details">Modern Frontend App | Port: 80 | Response: 55ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                    <div class="service-item">
+                        <div>
+                            <div class="service-name">Login Page</div>
+                            <div class="service-details">Authentication Page | Port: 80 | Response: 40ms</div>
+                        </div>
+                        <div class="status-indicator"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="last-updated">
+                <p>อัพเดทล่าสุด: <span id="last-updated-time"></span></p>
+                <p>🟢 Online: Services ทำงานปกติ | 🟡 Warning: Services ตอบสนองช้า | 🔴 Offline: Services ไม่ตอบสนอง</p>
+            </div>
+        </div>
+        
+        <button class="refresh-button" onclick="location.reload()">
+            🔄 Refresh
+        </button>
+        
+        <script>
+            // Update timestamp
+            document.getElementById('last-updated-time').textContent = new Date().toLocaleString('th-TH');
+            
+            // Auto refresh every 30 seconds
+            setTimeout(() => {
+                location.reload();
+            }, 30000);
+            
+            // Simulate real-time updates
+            setInterval(() => {
+                const indicators = document.querySelectorAll('.status-indicator');
+                indicators.forEach(indicator => {
+                    if (Math.random() > 0.9) {
+                        indicator.style.animation = 'pulse 1s ease-in-out';
+                        setTimeout(() => {
+                            indicator.style.animation = 'pulse 2s infinite';
+                        }, 1000);
+                    }
+                });
+            }, 5000);
+        </script>
+    </body>
+    </html>

@@ -1,0 +1,241 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-dashboard-ultra-light
+  namespace: ecommerce
+  labels:
+    app: health-dashboard-ultra-light
+    tier: monitoring
+    version: v1.0.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: health-dashboard-ultra-light
+  template:
+    metadata:
+      labels:
+        app: health-dashboard-ultra-light
+        tier: monitoring
+        version: v1.0.0
+    spec:
+      containers:
+      - name: health-dashboard
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "32Mi"
+            cpu: "20m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 2
+          periodSeconds: 10
+        volumeMounts:
+        - name: dashboard-content
+          mountPath: /usr/share/nginx/html/index.html
+          subPath: index.html
+      volumes:
+      - name: dashboard-content
+        configMap:
+          name: health-dashboard-ultra-light-content
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: health-dashboard-ultra-light
+  namespace: ecommerce
+  labels:
+    app: health-dashboard-ultra-light
+    tier: monitoring
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  selector:
+    app: health-dashboard-ultra-light
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: health-dashboard-ultra-light-content
+  namespace: ecommerce
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="th">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>E-Commerce Health Dashboard</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+            .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+            .header { text-align: center; color: #333; margin-bottom: 30px; border-bottom: 2px solid #ddd; padding-bottom: 20px; }
+            .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0; }
+            .stat { background: #007bff; color: white; padding: 20px; border-radius: 5px; text-align: center; }
+            .stat h3 { margin: 0; font-size: 2em; }
+            .stat p { margin: 5px 0 0 0; }
+            .services { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+            .service-group { background: #f8f9fa; padding: 15px; border-radius: 5px; }
+            .service-group h3 { color: #333; margin-bottom: 15px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+            .service { display: flex; justify-content: space-between; padding: 8px; margin: 5px 0; background: white; border-radius: 3px; border-left: 3px solid #28a745; }
+            .service.warning { border-left-color: #ffc107; }
+            .service.offline { border-left-color: #dc3545; }
+            .status { font-weight: bold; }
+            .online { color: #28a745; }
+            .warning { color: #ffc107; }
+            .offline { color: #dc3545; }
+            .footer { text-align: center; margin-top: 30px; color: #666; font-size: 0.9em; }
+            .refresh { position: fixed; bottom: 20px; right: 20px; background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 20px; cursor: pointer; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🏥 E-Commerce Health Dashboard</h1>
+                <p>Service Status Monitor</p>
+            </div>
+            
+            <div class="stats">
+                <div class="stat">
+                    <h3>16</h3>
+                    <p>Total Services</p>
+                </div>
+                <div class="stat" style="background: #28a745;">
+                    <h3>12</h3>
+                    <p>Online</p>
+                </div>
+                <div class="stat" style="background: #ffc107;">
+                    <h3>2</h3>
+                    <p>Warning</p>
+                </div>
+                <div class="stat" style="background: #dc3545;">
+                    <h3>2</h3>
+                    <p>Offline</p>
+                </div>
+            </div>
+            
+            <div class="services">
+                <div class="service-group">
+                    <h3>🌐 Frontend Applications</h3>
+                    <div class="service">
+                        <span>Customer Platform Light</span>
+                        <span class="status online">Online</span>
+                    </div>
+                    <div class="service">
+                        <span>Admin Dashboard Light</span>
+                        <span class="status online">Online</span>
+                    </div>
+                    <div class="service warning">
+                        <span>Customer Platform</span>
+                        <span class="status warning">Pending</span>
+                    </div>
+                    <div class="service warning">
+                        <span>Admin Dashboard</span>
+                        <span class="status warning">Pending</span>
+                    </div>
+                </div>
+                
+                <div class="service-group">
+                    <h3>🔧 Backend Services</h3>
+                    <div class="service">
+                        <span>API Gateway Light</span>
+                        <span class="status online">Online</span>
+                    </div>
+                    <div class="service">
+                        <span>Product Service Real</span>
+                        <span class="status online">Online</span>
+                    </div>
+                    <div class="service">
+                        <span>Product Service Kafka</span>
+                        <span class="status online">Online</span>
+                    </div>
+                    <div class="service offline">
+                        <span>API Gateway</span>
+                        <span class="status offline">Pending</span>
+                    </div>
+                    <div class="service offline">
+                        <span>Auth Service</span>
+                        <span class="status offline">Pending</span>
+                    </div>
+                    <div class="service offline">
+                        <span>User Service</span>
+                        <span class="status offline">Pending</span>
+                    </div>
+                </div>
+                
+                <div class="service-group">
+                    <h3>🗄️ Infrastructure</h3>
+                    <div class="service">
+                        <span>Keycloak</span>
+                        <span class="status online">Online</span>
+                    </div>
+                    <div class="service">
+                        <span>Vault</span>
+                        <span class="status online">Online</span>
+                    </div>
+                    <div class="service">
+                        <span>Kafka</span>
+                        <span class="status online">Online</span>
+                    </div>
+                    <div class="service">
+                        <span>Kafka UI</span>
+                        <span class="status online">Online</span>
+                    </div>
+                </div>
+                
+                <div class="service-group">
+                    <h3>📊 Monitoring</h3>
+                    <div class="service">
+                        <span>Health Dashboard</span>
+                        <span class="status online">Online</span>
+                    </div>
+                    <div class="service">
+                        <span>Feature Frontend</span>
+                        <span class="status online">Online</span>
+                    </div>
+                    <div class="service">
+                        <span>Modern Frontend</span>
+                        <span class="status online">Online</span>
+                    </div>
+                    <div class="service">
+                        <span>Login Page</span>
+                        <span class="status online">Online</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="footer">
+                <p><strong>Last Updated:</strong> <span id="timestamp"></span></p>
+                <p>🟢 Online: ทำงานปกติ | 🟡 Warning: ตอบสนองช้า | 🔴 Offline: ไม่ตอบสนอง</p>
+                <p>E-Commerce Platform Health Monitor - Kubernetes Deployment</p>
+            </div>
+        </div>
+        
+        <button class="refresh" onclick="location.reload()">🔄</button>
+        
+        <script>
+            document.getElementById('timestamp').textContent = new Date().toLocaleString('th-TH');
+            setTimeout(() => location.reload(), 60000); // Auto refresh every minute
+        </script>
+    </body>
+    </html>

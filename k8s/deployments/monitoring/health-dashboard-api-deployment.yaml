@@ -1,0 +1,301 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-dashboard-api
+  namespace: ecommerce
+  labels:
+    app: health-dashboard-api
+    tier: monitoring
+    version: v1.0.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: health-dashboard-api
+  template:
+    metadata:
+      labels:
+        app: health-dashboard-api
+        tier: monitoring
+        version: v1.0.0
+    spec:
+      containers:
+      - name: health-dashboard-api
+        image: node:18-alpine
+        ports:
+        - containerPort: 3000
+          name: http
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        command: ["/bin/sh"]
+        args:
+          - -c
+          - |
+            cat > /app/package.json << 'EOF'
+            {
+              "name": "health-dashboard-api",
+              "version": "1.0.0",
+              "description": "Health Check API for E-Commerce Services",
+              "main": "server.js",
+              "scripts": {
+                "start": "node server.js"
+              },
+              "dependencies": {
+                "express": "^4.18.2",
+                "cors": "^2.8.5",
+                "axios": "^1.6.0"
+              }
+            }
+            EOF
+            
+            cat > /app/server.js << 'EOF'
+            const express = require('express');
+            const cors = require('cors');
+            const axios = require('axios');
+            
+            const app = express();
+            const PORT = process.env.PORT || 3000;
+            
+            app.use(cors());
+            app.use(express.json());
+            
+            // Service definitions
+            const services = {
+              frontend: [
+                { name: 'Customer Platform', url: 'http://customer-platform:3000', healthPath: '/health' },
+                { name: 'Admin Dashboard', url: 'http://admin-dashboard:3100', healthPath: '/health' },
+                { name: 'Customer Platform Light', url: 'http://customer-platform-light', healthPath: '/health' },
+                { name: 'Admin Dashboard Light', url: 'http://admin-dashboard-light', healthPath: '/health' }
+              ],
+              backend: [
+                { name: 'API Gateway', url: 'http://api-gateway:8080', healthPath: '/health' },
+                { name: 'API Gateway Light', url: 'http://api-gateway-light', healthPath: '/health' },
+                { name: 'Auth Service', url: 'http://auth-service:3001', healthPath: '/health' },
+                { name: 'User Service', url: 'http://user-service:3002', healthPath: '/health' },
+                { name: 'Product Service', url: 'http://product-service:3003', healthPath: '/health' },
+                { name: 'Order Service', url: 'http://order-service:3004', healthPath: '/health' },
+                { name: 'Payment Service', url: 'http://payment-service:3005', healthPath: '/health' },
+                { name: 'Cart Service', url: 'http://cart-service:3006', healthPath: '/health' },
+                { name: 'Inventory Service', url: 'http://inventory-service:3007', healthPath: '/health' },
+                { name: 'Shipping Service', url: 'http://shipping-service:3008', healthPath: '/health' },
+                { name: 'Promotion Service', url: 'http://promotion-service:3009', healthPath: '/health' },
+                { name: 'Review Service', url: 'http://review-service:3010', healthPath: '/health' },
+                { name: 'Notification Service', url: 'http://notification-service:3011', healthPath: '/health' },
+                { name: 'Admin Service', url: 'http://admin-service:3012', healthPath: '/health' }
+              ],
+              infrastructure: [
+                { name: 'Keycloak', url: 'http://keycloak:8080', healthPath: '/health' },
+                { name: 'Vault', url: 'http://vault:8200', healthPath: '/v1/sys/health' },
+                { name: 'Kafka', url: 'http://kafka:9092', healthPath: '/' },
+                { name: 'Kafka UI', url: 'http://kafka-ui:8080', healthPath: '/' }
+              ]
+            };
+            
+            // Health check function
+            async function checkServiceHealth(service) {
+              const startTime = Date.now();
+              try {
+                const response = await axios.get(service.url + service.healthPath, {
+                  timeout: 5000,
+                  validateStatus: function (status) {
+                    return status < 500; // Accept any status code less than 500
+                  }
+                });
+                
+                const responseTime = Date.now() - startTime;
+                let status = 'online';
+                
+                if (responseTime > 2000) {
+                  status = 'warning';
+                } else if (response.status >= 400) {
+                  status = 'warning';
+                }
+                
+                return {
+                  status: status,
+                  responseTime: responseTime,
+                  httpStatus: response.status,
+                  lastCheck: new Date().toISOString(),
+                  message: 'Service is responding'
+                };
+              } catch (error) {
+                const responseTime = Date.now() - startTime;
+                return {
+                  status: 'offline',
+                  responseTime: responseTime,
+                  httpStatus: 0,
+                  lastCheck: new Date().toISOString(),
+                  message: error.message,
+                  error: error.code || 'UNKNOWN_ERROR'
+                };
+              }
+            }
+            
+            // API Routes
+            app.get('/health', (req, res) => {
+              res.json({ status: 'ok', timestamp: new Date().toISOString() });
+            });
+            
+            app.get('/api/services', (req, res) => {
+              res.json(services);
+            });
+            
+            app.get('/api/health/all', async (req, res) => {
+              try {
+                const results = {};
+                let totalServices = 0;
+                let onlineServices = 0;
+                let warningServices = 0;
+                let offlineServices = 0;
+                
+                for (const category in services) {
+                  results[category] = [];
+                  
+                  for (const service of services[category]) {
+                    totalServices++;
+                    const healthStatus = await checkServiceHealth(service);
+                    
+                    if (healthStatus.status === 'online') onlineServices++;
+                    else if (healthStatus.status === 'warning') warningServices++;
+                    else offlineServices++;
+                    
+                    results[category].push({
+                      ...service,
+                      health: healthStatus
+                    });
+                  }
+                }
+                
+                res.json({
+                  summary: {
+                    total: totalServices,
+                    online: onlineServices,
+                    warning: warningServices,
+                    offline: offlineServices,
+                    lastUpdated: new Date().toISOString()
+                  },
+                  services: results
+                });
+              } catch (error) {
+                res.status(500).json({
+                  error: 'Failed to check service health',
+                  message: error.message
+                });
+              }
+            });
+            
+            app.get('/api/health/:category', async (req, res) => {
+              try {
+                const category = req.params.category;
+                if (!services[category]) {
+                  return res.status(404).json({ error: 'Category not found' });
+                }
+                
+                const results = [];
+                for (const service of services[category]) {
+                  const healthStatus = await checkServiceHealth(service);
+                  results.push({
+                    ...service,
+                    health: healthStatus
+                  });
+                }
+                
+                res.json({
+                  category: category,
+                  services: results,
+                  lastUpdated: new Date().toISOString()
+                });
+              } catch (error) {
+                res.status(500).json({
+                  error: 'Failed to check service health',
+                  message: error.message
+                });
+              }
+            });
+            
+            app.get('/api/health/service/:serviceName', async (req, res) => {
+              try {
+                const serviceName = req.params.serviceName;
+                let foundService = null;
+                
+                // Find service in all categories
+                for (const category in services) {
+                  const service = services[category].find(s => 
+                    s.name.toLowerCase().replace(/\s+/g, '-') === serviceName.toLowerCase()
+                  );
+                  if (service) {
+                    foundService = service;
+                    break;
+                  }
+                }
+                
+                if (!foundService) {
+                  return res.status(404).json({ error: 'Service not found' });
+                }
+                
+                const healthStatus = await checkServiceHealth(foundService);
+                res.json({
+                  service: foundService,
+                  health: healthStatus
+                });
+              } catch (error) {
+                res.status(500).json({
+                  error: 'Failed to check service health',
+                  message: error.message
+                });
+              }
+            });
+            
+            // Start server
+            app.listen(PORT, '0.0.0.0', () => {
+              console.log(`Health Dashboard API running on port ${PORT}`);
+              console.log(`Environment: ${process.env.NODE_ENV}`);
+              console.log(`Services configured: ${Object.keys(services).length} categories`);
+            });
+            EOF
+            
+            cd /app
+            npm install --production
+            npm start
+        workingDir: /app
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: health-dashboard-api
+  namespace: ecommerce
+  labels:
+    app: health-dashboard-api
+    tier: monitoring
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: health-dashboard-api
