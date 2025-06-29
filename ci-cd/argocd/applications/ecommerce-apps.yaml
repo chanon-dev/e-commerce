@@ -1,0 +1,566 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: ecommerce
+  namespace: argocd
+spec:
+  description: E-Commerce Microservices Platform
+  sourceRepos:
+  - 'https://github.com/your-org/ecommerce.git'
+  destinations:
+  - namespace: ecommerce-dev
+    server: https://kubernetes.default.svc
+  - namespace: ecommerce-staging
+    server: https://kubernetes.default.svc
+  - namespace: ecommerce-prod
+    server: https://kubernetes.default.svc
+  - namespace: ecommerce-monitoring
+    server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
+  - group: rbac.authorization.k8s.io
+    kind: ClusterRole
+  - group: rbac.authorization.k8s.io
+    kind: ClusterRoleBinding
+  - group: networking.k8s.io
+    kind: Ingress
+  - group: cert-manager.io
+    kind: ClusterIssuer
+  namespaceResourceWhitelist:
+  - group: ''
+    kind: ConfigMap
+  - group: ''
+    kind: Secret
+  - group: ''
+    kind: Service
+  - group: ''
+    kind: ServiceAccount
+  - group: ''
+    kind: PersistentVolumeClaim
+  - group: apps
+    kind: Deployment
+  - group: apps
+    kind: StatefulSet
+  - group: apps
+    kind: DaemonSet
+  - group: networking.k8s.io
+    kind: Ingress
+  - group: cert-manager.io
+    kind: Certificate
+  - group: monitoring.coreos.com
+    kind: ServiceMonitor
+  roles:
+  - name: admin
+    description: Admin access to ecommerce project
+    policies:
+    - p, proj:ecommerce:admin, applications, *, ecommerce/*, allow
+    - p, proj:ecommerce:admin, repositories, *, ecommerce/*, allow
+    - p, proj:ecommerce:admin, logs, get, ecommerce/*, allow
+    - p, proj:ecommerce:admin, exec, create, ecommerce/*, allow
+    groups:
+    - ecommerce:admin
+  - name: developer
+    description: Developer access to ecommerce project
+    policies:
+    - p, proj:ecommerce:developer, applications, get, ecommerce/*, allow
+    - p, proj:ecommerce:developer, applications, sync, ecommerce/*, allow
+    - p, proj:ecommerce:developer, logs, get, ecommerce/*, allow
+    groups:
+    - ecommerce:developer
+---
+# API Gateway Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-api-gateway-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/api-gateway
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Auth Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-auth-service-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/auth-service
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# User Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-user-service-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/user-service
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Product Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-product-service-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/product-service
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Order Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-order-service-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/order-service
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Payment Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-payment-service-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/payment-service
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Cart Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-cart-service-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/cart-service
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Inventory Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-inventory-service-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/inventory-service
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Shipping Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-shipping-service-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/shipping-service
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Promotion Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-promotion-service-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/promotion-service
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Review Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-review-service-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/review-service
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Notification Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-notification-service-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/notification-service
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Admin Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-admin-service-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/admin-service
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Customer Platform Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-customer-platform-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/customer-platform
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Admin Dashboard Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-admin-dashboard-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/apps/admin-dashboard
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Infrastructure Application (Databases, Monitoring, etc.)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-infrastructure-dev
+  namespace: argocd
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce.git
+    targetRevision: HEAD
+    path: k8s/infrastructure
+    helm:
+      valueFiles:
+      - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,264 @@
+global:
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'alerts@ecommerce.example.com'
+  smtp_auth_username: 'alerts@ecommerce.example.com'
+  smtp_auth_password: 'your-app-password'
+  smtp_require_tls: true
+
+  # Slack configuration
+  slack_api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+
+  # PagerDuty configuration
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+
+# Templates for notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Routing configuration
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'default-receiver'
+  
+  routes:
+    # Critical alerts go to PagerDuty and Slack
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 5s
+      repeat_interval: 5m
+      continue: true
+
+    # Security alerts
+    - match:
+        team: security
+      receiver: 'security-team'
+      group_wait: 0s
+      repeat_interval: 15m
+      continue: true
+
+    # Business alerts
+    - match:
+        team: business
+      receiver: 'business-team'
+      group_wait: 30s
+      repeat_interval: 2h
+
+    # Infrastructure alerts
+    - match:
+        team: infrastructure
+      receiver: 'infrastructure-team'
+      group_wait: 30s
+      repeat_interval: 1h
+
+    # Database alerts
+    - match:
+        team: database
+      receiver: 'database-team'
+      group_wait: 15s
+      repeat_interval: 30m
+
+    # Frontend alerts
+    - match:
+        team: frontend
+      receiver: 'frontend-team'
+      group_wait: 1m
+      repeat_interval: 2h
+
+    # Payment alerts (high priority)
+    - match:
+        team: payments
+      receiver: 'payments-team'
+      group_wait: 5s
+      repeat_interval: 10m
+
+# Inhibition rules
+inhibit_rules:
+  # Inhibit warning alerts if critical alert is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+  # Inhibit service alerts if the entire node is down
+  - source_match:
+      alertname: 'ServiceDown'
+    target_match_re:
+      alertname: '.*'
+    equal: ['instance']
+
+# Receivers configuration
+receivers:
+  # Default receiver
+  - name: 'default-receiver'
+    email_configs:
+      - to: 'devops@ecommerce.example.com'
+        subject: '[ALERT] {{ .GroupLabels.alertname }} - {{ .GroupLabels.instance }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Labels: {{ range .Labels.SortedPairs }}{{ .Name }}={{ .Value }} {{ end }}
+          {{ end }}
+
+  # Critical alerts
+  - name: 'critical-alerts'
+    pagerduty_configs:
+      - routing_key: 'your-pagerduty-integration-key'
+        description: '{{ .GroupLabels.alertname }} - {{ .GroupLabels.instance }}'
+        details:
+          summary: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+          description: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+          severity: '{{ .GroupLabels.severity }}'
+          timestamp: '{{ .GroupLabels.timestamp }}'
+    
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/CRITICAL/WEBHOOK'
+        channel: '#critical-alerts'
+        title: '🚨 CRITICAL ALERT'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Severity:* {{ .Labels.severity }}
+          *Service:* {{ .Labels.job }}
+          *Instance:* {{ .Labels.instance }}
+          {{ end }}
+        color: 'danger'
+        send_resolved: true
+
+  # Security team alerts
+  - name: 'security-team'
+    email_configs:
+      - to: 'security@ecommerce.example.com'
+        subject: '[SECURITY ALERT] {{ .GroupLabels.alertname }}'
+        body: |
+          🔒 SECURITY ALERT DETECTED
+          
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Time: {{ .StartsAt }}
+          Labels: {{ range .Labels.SortedPairs }}{{ .Name }}={{ .Value }} {{ end }}
+          {{ end }}
+    
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/SECURITY/WEBHOOK'
+        channel: '#security-alerts'
+        title: '🔒 Security Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Source IP:* {{ .Labels.source_ip }}
+          *Endpoint:* {{ .Labels.endpoint }}
+          {{ end }}
+        color: 'warning'
+
+  # Business team alerts
+  - name: 'business-team'
+    email_configs:
+      - to: 'business@ecommerce.example.com'
+        subject: '[BUSINESS ALERT] {{ .GroupLabels.alertname }}'
+        body: |
+          📊 BUSINESS METRIC ALERT
+          
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Current Value: {{ .Labels.value }}
+          Time: {{ .StartsAt }}
+          {{ end }}
+    
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/BUSINESS/WEBHOOK'
+        channel: '#business-alerts'
+        title: '📊 Business Metric Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Current Value:* {{ .Labels.value }}
+          {{ end }}
+        color: 'warning'
+
+  # Infrastructure team alerts
+  - name: 'infrastructure-team'
+    email_configs:
+      - to: 'infrastructure@ecommerce.example.com'
+        subject: '[INFRA ALERT] {{ .GroupLabels.alertname }}'
+    
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/INFRA/WEBHOOK'
+        channel: '#infrastructure-alerts'
+        title: '🏗️ Infrastructure Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Instance:* {{ .Labels.instance }}
+          {{ end }}
+
+  # Database team alerts
+  - name: 'database-team'
+    email_configs:
+      - to: 'database@ecommerce.example.com'
+        subject: '[DATABASE ALERT] {{ .GroupLabels.alertname }}'
+    
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/DATABASE/WEBHOOK'
+        channel: '#database-alerts'
+        title: '🗄️ Database Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Database:* {{ .Labels.datname }}
+          *Instance:* {{ .Labels.instance }}
+          {{ end }}
+
+  # Frontend team alerts
+  - name: 'frontend-team'
+    email_configs:
+      - to: 'frontend@ecommerce.example.com'
+        subject: '[FRONTEND ALERT] {{ .GroupLabels.alertname }}'
+    
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/FRONTEND/WEBHOOK'
+        channel: '#frontend-alerts'
+        title: '🌐 Frontend Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Page:* {{ .Labels.page }}
+          *Error Rate:* {{ .Labels.error_rate }}%
+          {{ end }}
+
+  # Payments team alerts
+  - name: 'payments-team'
+    email_configs:
+      - to: 'payments@ecommerce.example.com'
+        subject: '[PAYMENT ALERT] {{ .GroupLabels.alertname }}'
+    
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/PAYMENTS/WEBHOOK'
+        channel: '#payments-alerts'
+        title: '💳 Payment Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Payment Provider:* {{ .Labels.provider }}
+          *Failure Count:* {{ .Labels.failure_count }}
+          {{ end }}
+        color: 'danger'
+
+    # Also send to PagerDuty for payment issues
+    pagerduty_configs:
+      - routing_key: 'payments-pagerduty-key'
+        description: 'Payment System Alert: {{ .GroupLabels.alertname }}'

@@ -1,0 +1,409 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_REGISTRY = 'your-registry.com'
+        DOCKER_REPO = 'ecommerce'
+        KUBECONFIG = credentials('kubeconfig')
+        DOCKER_CREDENTIALS = credentials('docker-registry')
+        VAULT_ADDR = 'http://vault.ecommerce.local:8200'
+        VAULT_TOKEN = credentials('vault-token')
+        ARGOCD_SERVER = 'argocd.ecommerce.local'
+        ARGOCD_TOKEN = credentials('argocd-token')
+    }
+    
+    parameters {
+        choice(
+            name: 'SERVICE',
+            choices: [
+                'all',
+                'api-gateway',
+                'auth-service',
+                'user-service',
+                'product-service',
+                'order-service',
+                'payment-service',
+                'cart-service',
+                'inventory-service',
+                'shipping-service',
+                'promotion-service',
+                'review-service',
+                'notification-service',
+                'admin-service',
+                'customer-platform',
+                'admin-dashboard'
+            ],
+            description: 'Select service to deploy'
+        )
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['dev', 'staging', 'prod'],
+            description: 'Target environment'
+        )
+        booleanParam(
+            name: 'SKIP_TESTS',
+            defaultValue: false,
+            description: 'Skip running tests'
+        )
+        booleanParam(
+            name: 'FORCE_DEPLOY',
+            defaultValue: false,
+            description: 'Force deployment even if no changes'
+        )
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_COMMIT_SHORT = sh(
+                        script: 'git rev-parse --short HEAD',
+                        returnStdout: true
+                    ).trim()
+                    env.BUILD_TAG = "${env.ENVIRONMENT}-${env.GIT_COMMIT_SHORT}-${env.BUILD_NUMBER}"
+                }
+            }
+        }
+        
+        stage('Detect Changes') {
+            when {
+                not { params.FORCE_DEPLOY }
+            }
+            steps {
+                script {
+                    def changedServices = []
+                    
+                    if (params.SERVICE == 'all') {
+                        // Detect which services have changes
+                        def changes = sh(
+                            script: 'git diff --name-only HEAD~1 HEAD',
+                            returnStdout: true
+                        ).trim().split('\n')
+                        
+                        def serviceMap = [
+                            'backend/api-gateway/': 'api-gateway',
+                            'backend/auth-service/': 'auth-service',
+                            'backend/user-service/': 'user-service',
+                            'backend/product-service/': 'product-service',
+                            'backend/order-service/': 'order-service',
+                            'backend/payment-service/': 'payment-service',
+                            'backend/cart-service/': 'cart-service',
+                            'backend/inventory-service/': 'inventory-service',
+                            'backend/shipping-service/': 'shipping-service',
+                            'backend/promotion-service/': 'promotion-service',
+                            'backend/review-service/': 'review-service',
+                            'backend/notification-service/': 'notification-service',
+                            'backend/admin-service/': 'admin-service',
+                            'frontend/customer-platform/': 'customer-platform',
+                            'frontend/admin-dashboard/': 'admin-dashboard'
+                        ]
+                        
+                        changes.each { change ->
+                            serviceMap.each { path, service ->
+                                if (change.startsWith(path)) {
+                                    if (!changedServices.contains(service)) {
+                                        changedServices.add(service)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        env.CHANGED_SERVICES = changedServices.join(',')
+                    } else {
+                        env.CHANGED_SERVICES = params.SERVICE
+                    }
+                    
+                    echo "Services to deploy: ${env.CHANGED_SERVICES}"
+                }
+            }
+        }
+        
+        stage('Build and Test') {
+            parallel {
+                stage('Backend Services') {
+                    when {
+                        expression { 
+                            return env.CHANGED_SERVICES?.contains('auth-service') ||
+                                   env.CHANGED_SERVICES?.contains('cart-service') ||
+                                   env.CHANGED_SERVICES?.contains('shipping-service') ||
+                                   env.CHANGED_SERVICES?.contains('review-service') ||
+                                   env.CHANGED_SERVICES?.contains('admin-service') ||
+                                   env.CHANGED_SERVICES?.contains('api-gateway')
+                        }
+                    }
+                    steps {
+                        script {
+                            def nestjsServices = ['auth-service', 'cart-service', 'shipping-service', 'review-service', 'admin-service', 'api-gateway']
+                            nestjsServices.each { service ->
+                                if (env.CHANGED_SERVICES?.contains(service)) {
+                                    buildNestJSService(service)
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('.NET Services') {
+                    when {
+                        expression { 
+                            return env.CHANGED_SERVICES?.contains('user-service') ||
+                                   env.CHANGED_SERVICES?.contains('order-service') ||
+                                   env.CHANGED_SERVICES?.contains('promotion-service')
+                        }
+                    }
+                    steps {
+                        script {
+                            def dotnetServices = ['user-service', 'order-service', 'promotion-service']
+                            dotnetServices.each { service ->
+                                if (env.CHANGED_SERVICES?.contains(service)) {
+                                    buildDotNetService(service)
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('Go Services') {
+                    when {
+                        expression { 
+                            return env.CHANGED_SERVICES?.contains('product-service') ||
+                                   env.CHANGED_SERVICES?.contains('payment-service') ||
+                                   env.CHANGED_SERVICES?.contains('inventory-service') ||
+                                   env.CHANGED_SERVICES?.contains('notification-service')
+                        }
+                    }
+                    steps {
+                        script {
+                            def goServices = ['product-service', 'payment-service', 'inventory-service', 'notification-service']
+                            goServices.each { service ->
+                                if (env.CHANGED_SERVICES?.contains(service)) {
+                                    buildGoService(service)
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('Frontend Applications') {
+                    when {
+                        expression { 
+                            return env.CHANGED_SERVICES?.contains('customer-platform') ||
+                                   env.CHANGED_SERVICES?.contains('admin-dashboard')
+                        }
+                    }
+                    steps {
+                        script {
+                            def frontendApps = ['customer-platform', 'admin-dashboard']
+                            frontendApps.each { app ->
+                                if (env.CHANGED_SERVICES?.contains(app)) {
+                                    buildNextJSApp(app)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Security Scan') {
+            parallel {
+                stage('Container Security Scan') {
+                    steps {
+                        script {
+                            if (env.CHANGED_SERVICES) {
+                                env.CHANGED_SERVICES.split(',').each { service ->
+                                    sh """
+                                        trivy image --exit-code 0 --severity HIGH,CRITICAL \
+                                        ${DOCKER_REGISTRY}/${DOCKER_REPO}/${service}:${BUILD_TAG}
+                                    """
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('Code Security Scan') {
+                    steps {
+                        sh 'sonar-scanner -Dsonar.projectKey=ecommerce -Dsonar.sources=.'
+                    }
+                }
+            }
+        }
+        
+        stage('Push Images') {
+            steps {
+                script {
+                    docker.withRegistry("https://${DOCKER_REGISTRY}", 'docker-registry') {
+                        if (env.CHANGED_SERVICES) {
+                            env.CHANGED_SERVICES.split(',').each { service ->
+                                def image = docker.image("${DOCKER_REGISTRY}/${DOCKER_REPO}/${service}:${BUILD_TAG}")
+                                image.push()
+                                image.push('latest')
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Update Manifests') {
+            steps {
+                script {
+                    // Update Kubernetes manifests with new image tags
+                    if (env.CHANGED_SERVICES) {
+                        env.CHANGED_SERVICES.split(',').each { service ->
+                            sh """
+                                sed -i 's|image: ${DOCKER_REGISTRY}/${DOCKER_REPO}/${service}:.*|image: ${DOCKER_REGISTRY}/${DOCKER_REPO}/${service}:${BUILD_TAG}|g' \
+                                k8s/apps/${service}/deployment.yaml
+                            """
+                        }
+                        
+                        // Commit and push changes
+                        sh """
+                            git config user.name "Jenkins"
+                            git config user.email "jenkins@ecommerce.local"
+                            git add k8s/apps/
+                            git commit -m "Update image tags for ${env.CHANGED_SERVICES} - ${BUILD_TAG}" || true
+                            git push origin main
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy with ArgoCD') {
+            steps {
+                script {
+                    // Sync ArgoCD applications
+                    if (env.CHANGED_SERVICES) {
+                        env.CHANGED_SERVICES.split(',').each { service ->
+                            sh """
+                                argocd app sync ecommerce-${service}-${env.ENVIRONMENT} \
+                                --server ${ARGOCD_SERVER} \
+                                --auth-token ${ARGOCD_TOKEN} \
+                                --prune
+                            """
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Health Check') {
+            steps {
+                script {
+                    // Wait for deployments to be ready
+                    if (env.CHANGED_SERVICES) {
+                        env.CHANGED_SERVICES.split(',').each { service ->
+                            sh """
+                                kubectl rollout status deployment/${service} \
+                                -n ecommerce-${env.ENVIRONMENT} \
+                                --timeout=300s
+                            """
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Integration Tests') {
+            when {
+                not { params.SKIP_TESTS }
+            }
+            steps {
+                script {
+                    // Run integration tests
+                    sh """
+                        cd tests/integration
+                        npm install
+                        npm run test:${env.ENVIRONMENT}
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            // Clean up
+            sh 'docker system prune -f'
+            
+            // Archive test results
+            publishTestResults testResultsPattern: '**/test-results.xml'
+            
+            // Archive build artifacts
+            archiveArtifacts artifacts: 'build-reports/**', allowEmptyArchive: true
+        }
+        
+        success {
+            // Send success notification
+            slackSend(
+                channel: '#deployments',
+                color: 'good',
+                message: "✅ Deployment successful: ${env.CHANGED_SERVICES} to ${env.ENVIRONMENT}"
+            )
+        }
+        
+        failure {
+            // Send failure notification
+            slackSend(
+                channel: '#deployments',
+                color: 'danger',
+                message: "❌ Deployment failed: ${env.CHANGED_SERVICES} to ${env.ENVIRONMENT}"
+            )
+        }
+    }
+}
+
+// Helper functions
+def buildNestJSService(service) {
+    dir("backend/${service}") {
+        sh """
+            npm ci
+            npm run lint
+            npm run test:unit
+            npm run build
+            
+            docker build -t ${DOCKER_REGISTRY}/${DOCKER_REPO}/${service}:${BUILD_TAG} .
+        """
+    }
+}
+
+def buildDotNetService(service) {
+    dir("backend/${service}") {
+        sh """
+            dotnet restore
+            dotnet build --configuration Release
+            dotnet test --configuration Release --logger trx --results-directory ./TestResults
+            
+            docker build -t ${DOCKER_REGISTRY}/${DOCKER_REPO}/${service}:${BUILD_TAG} .
+        """
+    }
+}
+
+def buildGoService(service) {
+    dir("backend/${service}") {
+        sh """
+            go mod download
+            go vet ./...
+            go test -v ./...
+            go build -o main .
+            
+            docker build -t ${DOCKER_REGISTRY}/${DOCKER_REPO}/${service}:${BUILD_TAG} .
+        """
+    }
+}
+
+def buildNextJSApp(app) {
+    dir("frontend/${app}") {
+        sh """
+            npm ci
+            npm run lint
+            npm run test
+            npm run build
+            
+            docker build -t ${DOCKER_REGISTRY}/${DOCKER_REPO}/${app}:${BUILD_TAG} .
+        """
+    }
+}

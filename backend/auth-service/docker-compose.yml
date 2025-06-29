@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  auth-service-db:
+    image: postgres:15-alpine
+    container_name: auth-service-db
+    environment:
+      - POSTGRES_DB=auth_service
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5434:5432"
+    volumes:
+      - auth_service_db_data:/var/lib/postgresql/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d auth_service"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  auth-service-redis:
+    image: redis:7-alpine
+    container_name: auth-service-redis
+    ports:
+      - "6381:6379"
+    volumes:
+      - auth_service_redis_data:/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  auth-service-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auth-service-api
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - DB_HOST=auth-service-db
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=password
+      - DB_NAME=auth_service
+      - REDIS_HOST=auth-service-redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=your-super-secret-jwt-key-here-make-it-long-and-random
+      - JWT_ACCESS_TOKEN_EXPIRY=1h
+      - JWT_REFRESH_TOKEN_EXPIRY=7d
+      - JWT_ISSUER=ecommerce-auth-service
+      - JWT_AUDIENCE=ecommerce-clients
+      - CORS_ORIGIN=*
+      - THROTTLE_TTL=60
+      - THROTTLE_LIMIT=100
+    ports:
+      - "3001:3001"
+    depends_on:
+      auth-service-db:
+        condition: service_healthy
+      auth-service-redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  auth_service_db_data:
+    driver: local
+  auth_service_redis_data:
+    driver: local
+
+networks:
+  ecommerce-network:
+    driver: bridge
+    external: true

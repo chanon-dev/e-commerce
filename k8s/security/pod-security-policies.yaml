@@ -1,0 +1,216 @@
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: ecommerce-restricted
+  labels:
+    app.kubernetes.io/name: ecommerce
+    app.kubernetes.io/component: security
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: 'runtime/default'
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: 'runtime/default'
+    apparmor.security.beta.kubernetes.io/allowedProfileNames: 'runtime/default'
+    apparmor.security.beta.kubernetes.io/defaultProfileName: 'runtime/default'
+spec:
+  # Prevent privileged containers
+  privileged: false
+  allowPrivilegeEscalation: false
+  
+  # Require non-root user
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  
+  # Require non-root group
+  runAsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1
+        max: 65535
+  
+  # Require specific fsGroup
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1
+        max: 65535
+  
+  # Drop all capabilities
+  requiredDropCapabilities:
+    - ALL
+  
+  # Don't allow any capabilities to be added
+  allowedCapabilities: []
+  
+  # Disallow host namespaces
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  
+  # Disallow host ports
+  hostPorts: []
+  
+  # Allow only specific volume types
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+    - 'csi'
+  
+  # Disallow host path volumes
+  allowedHostPaths: []
+  
+  # Require read-only root filesystem
+  readOnlyRootFilesystem: true
+  
+  # SELinux
+  seLinux:
+    rule: 'RunAsAny'
+  
+  # Supplemental groups
+  supplementalGroups:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1
+        max: 65535
+  
+  # Forbidden sysctls
+  forbiddenSysctls:
+    - '*'
+---
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: ecommerce-database
+  labels:
+    app.kubernetes.io/name: ecommerce-database
+    app.kubernetes.io/component: security
+spec:
+  # Databases may need some additional privileges
+  privileged: false
+  allowPrivilegeEscalation: false
+  
+  # Allow specific user ranges for databases
+  runAsUser:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 999
+        max: 65535
+  
+  runAsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 999
+        max: 65535
+  
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 999
+        max: 65535
+  
+  # Drop most capabilities
+  requiredDropCapabilities:
+    - ALL
+  
+  # Allow specific capabilities for databases
+  allowedCapabilities:
+    - CHOWN
+    - DAC_OVERRIDE
+    - FOWNER
+    - SETGID
+    - SETUID
+  
+  # Disallow host namespaces
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  
+  # Allow additional volume types for databases
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+    - 'csi'
+  
+  # Allow writable filesystem for databases
+  readOnlyRootFilesystem: false
+  
+  seLinux:
+    rule: 'RunAsAny'
+  
+  supplementalGroups:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 999
+        max: 65535
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ecommerce-psp-restricted
+  labels:
+    app.kubernetes.io/name: ecommerce
+    app.kubernetes.io/component: security
+rules:
+- apiGroups: ['policy']
+  resources: ['podsecuritypolicies']
+  verbs: ['use']
+  resourceNames:
+  - ecommerce-restricted
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ecommerce-psp-database
+  labels:
+    app.kubernetes.io/name: ecommerce-database
+    app.kubernetes.io/component: security
+rules:
+- apiGroups: ['policy']
+  resources: ['podsecuritypolicies']
+  verbs: ['use']
+  resourceNames:
+  - ecommerce-database
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ecommerce-psp-restricted
+  labels:
+    app.kubernetes.io/name: ecommerce
+    app.kubernetes.io/component: security
+roleRef:
+  kind: ClusterRole
+  name: ecommerce-psp-restricted
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: ecommerce-prod
+- kind: ServiceAccount
+  name: default
+  namespace: ecommerce-staging
+- kind: ServiceAccount
+  name: default
+  namespace: ecommerce-dev
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ecommerce-psp-database
+  labels:
+    app.kubernetes.io/name: ecommerce-database
+    app.kubernetes.io/component: security
+roleRef:
+  kind: ClusterRole
+  name: ecommerce-psp-database
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: ecommerce-data

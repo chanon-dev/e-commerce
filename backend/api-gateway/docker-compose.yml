@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  api-gateway-redis:
+    image: redis:7-alpine
+    container_name: api-gateway-redis
+    ports:
+      - "6382:6379"
+    volumes:
+      - api_gateway_redis_data:/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      - REDIS_HOST=api-gateway-redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=0
+      - CORS_ORIGIN=*
+      - THROTTLE_TTL=60
+      - THROTTLE_LIMIT=1000
+      - HTTP_TIMEOUT=10000
+      # Service URLs
+      - AUTH_SERVICE_URL=http://auth-service-api:3001
+      - USER_SERVICE_URL=http://user-service-api:3002
+      - PRODUCT_SERVICE_URL=http://product-service-api:3003
+      - ORDER_SERVICE_URL=http://order-service-api:3004
+      - PAYMENT_SERVICE_URL=http://payment-service-api:3005
+      - CART_SERVICE_URL=http://cart-service-api:3006
+      - INVENTORY_SERVICE_URL=http://inventory-service-api:3007
+      - NOTIFICATION_SERVICE_URL=http://notification-service-api:3011
+      # Circuit Breaker Settings
+      - CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
+      - CIRCUIT_BREAKER_SUCCESS_THRESHOLD=3
+      - CIRCUIT_BREAKER_TIMEOUT=60000
+      - CIRCUIT_BREAKER_MONITORING_PERIOD=300000
+      # Proxy Settings
+      - PROXY_TIMEOUT=10000
+      - PROXY_RETRIES=3
+    ports:
+      - "8080:8080"
+    depends_on:
+      api-gateway-redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  api_gateway_redis_data:
+    driver: local
+
+networks:
+  ecommerce-network:
+    driver: bridge
+    external: true

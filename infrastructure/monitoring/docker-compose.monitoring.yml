@@ -1,0 +1,397 @@
+version: '3.8'
+
+services:
+  # Prometheus - Metrics Collection
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: ecommerce-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/rules:/etc/prometheus/rules
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=10GB'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+      - '--log.level=info'
+    networks:
+      - monitoring
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Alertmanager - Alert Management
+  alertmanager:
+    image: prom/alertmanager:v0.25.0
+    container_name: ecommerce-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - ./alertmanager/templates:/etc/alertmanager/templates
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+      - '--log.level=info'
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Grafana - Visualization
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: ecommerce-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel,grafana-clock-panel
+      - GF_FEATURE_TOGGLES_ENABLE=ngalert
+      - GF_UNIFIED_ALERTING_ENABLED=true
+      - GF_ALERTING_ENABLED=false
+    networks:
+      - monitoring
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # Node Exporter - System Metrics
+  node-exporter:
+    image: prom/node-exporter:v1.6.0
+    container_name: ecommerce-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # cAdvisor - Container Metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: ecommerce-cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Elasticsearch - Log Storage
+  elasticsearch-1:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: ecommerce-elasticsearch-1
+    environment:
+      - node.name=elasticsearch-1
+      - cluster.name=ecommerce-logs
+      - discovery.seed_hosts=elasticsearch-2,elasticsearch-3
+      - cluster.initial_master_nodes=elasticsearch-1,elasticsearch-2,elasticsearch-3
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+      - xpack.security.enabled=false
+      - xpack.monitoring.collection.enabled=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch-1-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  elasticsearch-2:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: ecommerce-elasticsearch-2
+    environment:
+      - node.name=elasticsearch-2
+      - cluster.name=ecommerce-logs
+      - discovery.seed_hosts=elasticsearch-1,elasticsearch-3
+      - cluster.initial_master_nodes=elasticsearch-1,elasticsearch-2,elasticsearch-3
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+      - xpack.security.enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch-2-data:/usr/share/elasticsearch/data
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  elasticsearch-3:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: ecommerce-elasticsearch-3
+    environment:
+      - node.name=elasticsearch-3
+      - cluster.name=ecommerce-logs
+      - discovery.seed_hosts=elasticsearch-1,elasticsearch-2
+      - cluster.initial_master_nodes=elasticsearch-1,elasticsearch-2,elasticsearch-3
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+      - xpack.security.enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch-3-data:/usr/share/elasticsearch/data
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Logstash - Log Processing
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.8.0
+    container_name: ecommerce-logstash
+    ports:
+      - "5044:5044"
+      - "5514:5514/udp"
+      - "8080:8080"
+    volumes:
+      - ./elk/logstash/pipeline:/usr/share/logstash/pipeline
+      - ./elk/logstash/templates:/usr/share/logstash/templates
+      - ./elk/logstash/patterns:/usr/share/logstash/patterns
+    environment:
+      - "LS_JAVA_OPTS=-Xmx2g -Xms2g"
+      - ENVIRONMENT=production
+    networks:
+      - monitoring
+    depends_on:
+      - elasticsearch-1
+      - elasticsearch-2
+      - elasticsearch-3
+    restart: unless-stopped
+
+  # Kibana - Log Visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    container_name: ecommerce-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch-1:9200,http://elasticsearch-2:9200,http://elasticsearch-3:9200
+      - SERVER_NAME=kibana
+      - SERVER_HOST=0.0.0.0
+    volumes:
+      - ./elk/kibana/config:/usr/share/kibana/config
+      - kibana-data:/usr/share/kibana/data
+    networks:
+      - monitoring
+    depends_on:
+      - elasticsearch-1
+    restart: unless-stopped
+
+  # Jaeger - Distributed Tracing
+  jaeger-collector:
+    image: jaegertracing/jaeger-collector:1.46.0
+    container_name: ecommerce-jaeger-collector
+    ports:
+      - "14250:14250"
+      - "14268:14268"
+      - "14269:14269"
+    environment:
+      - SPAN_STORAGE_TYPE=elasticsearch
+      - ES_SERVER_URLS=http://elasticsearch-1:9200,http://elasticsearch-2:9200,http://elasticsearch-3:9200
+      - ES_NUM_SHARDS=3
+      - ES_NUM_REPLICAS=1
+      - LOG_LEVEL=info
+    networks:
+      - monitoring
+    depends_on:
+      - elasticsearch-1
+    restart: unless-stopped
+
+  jaeger-agent:
+    image: jaegertracing/jaeger-agent:1.46.0
+    container_name: ecommerce-jaeger-agent
+    ports:
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+    command:
+      - "--collector.grpc-server=jaeger-collector:14250"
+      - "--log-level=info"
+    networks:
+      - monitoring
+    depends_on:
+      - jaeger-collector
+    restart: unless-stopped
+
+  jaeger-query:
+    image: jaegertracing/jaeger-query:1.46.0
+    container_name: ecommerce-jaeger-query
+    ports:
+      - "16686:16686"
+    environment:
+      - SPAN_STORAGE_TYPE=elasticsearch
+      - ES_SERVER_URLS=http://elasticsearch-1:9200,http://elasticsearch-2:9200,http://elasticsearch-3:9200
+      - LOG_LEVEL=info
+    networks:
+      - monitoring
+    depends_on:
+      - elasticsearch-1
+    restart: unless-stopped
+
+  # Database Exporters
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.12.0
+    container_name: ecommerce-postgres-exporter
+    ports:
+      - "9187:9187"
+    environment:
+      - DATA_SOURCE_NAME=postgresql://postgres:password@postgres:5432/ecommerce?sslmode=disable
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.51.0
+    container_name: ecommerce-redis-exporter
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Blackbox Exporter - External Monitoring
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.24.0
+    container_name: ecommerce-blackbox-exporter
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Business Metrics Exporter
+  business-metrics-exporter:
+    build:
+      context: ./business-metrics-exporter
+      dockerfile: Dockerfile
+    container_name: ecommerce-business-metrics-exporter
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/ecommerce
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=kafka-1:9092,kafka-2:9093,kafka-3:9094
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Thanos - Long-term Storage
+  thanos-sidecar:
+    image: thanosio/thanos:v0.31.0
+    container_name: ecommerce-thanos-sidecar
+    command:
+      - 'sidecar'
+      - '--tsdb.path=/prometheus'
+      - '--prometheus.url=http://prometheus:9090'
+      - '--grpc-address=0.0.0.0:10901'
+      - '--http-address=0.0.0.0:10902'
+      - '--objstore.config-file=/etc/thanos/bucket_config.yaml'
+    volumes:
+      - prometheus-data:/prometheus
+      - ./thanos/bucket_config.yaml:/etc/thanos/bucket_config.yaml
+    ports:
+      - "10902:10902"
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  thanos-store:
+    image: thanosio/thanos:v0.31.0
+    container_name: ecommerce-thanos-store
+    command:
+      - 'store'
+      - '--grpc-address=0.0.0.0:10901'
+      - '--http-address=0.0.0.0:10902'
+      - '--data-dir=/var/thanos/store'
+      - '--objstore.config-file=/etc/thanos/bucket_config.yaml'
+    volumes:
+      - ./thanos/bucket_config.yaml:/etc/thanos/bucket_config.yaml
+      - thanos-store-data:/var/thanos/store
+    ports:
+      - "10903:10902"
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  thanos-query:
+    image: thanosio/thanos:v0.31.0
+    container_name: ecommerce-thanos-query
+    command:
+      - 'query'
+      - '--grpc-address=0.0.0.0:10901'
+      - '--http-address=0.0.0.0:10902'
+      - '--store=thanos-sidecar:10901'
+      - '--store=thanos-store:10901'
+    ports:
+      - "10904:10902"
+    networks:
+      - monitoring
+    depends_on:
+      - thanos-sidecar
+      - thanos-store
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:
+  elasticsearch-1-data:
+  elasticsearch-2-data:
+  elasticsearch-3-data:
+  kibana-data:
+  thanos-store-data:
+
+networks:
+  monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

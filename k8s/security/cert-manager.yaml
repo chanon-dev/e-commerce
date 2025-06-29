@@ -1,0 +1,61 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/component: security
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ssl@ecommerce.com
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+    - dns01:
+        cloudflare:
+          email: ssl@ecommerce.com
+          apiTokenSecretRef:
+            name: cloudflare-api-token
+            key: api-token
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  labels:
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/component: security
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: ssl@ecommerce.com
+    privateKeySecretRef:
+      name: letsencrypt-staging
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ecommerce-tls
+  namespace: ecommerce-prod
+  labels:
+    app.kubernetes.io/name: ecommerce
+    app.kubernetes.io/component: security
+spec:
+  secretName: ecommerce-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - ecommerce.com
+  - www.ecommerce.com
+  - api.ecommerce.com
+  - admin.ecommerce.com
+  - cdn.ecommerce.com

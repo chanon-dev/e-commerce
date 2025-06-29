@@ -1,0 +1,256 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'ecommerce-platform'
+    environment: 'production'
+
+rule_files:
+  - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Node Exporter (System metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: 
+        - 'node-exporter:9100'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # cAdvisor (Container metrics)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: 
+        - 'cadvisor:8080'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # API Gateway
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: 
+        - 'api-gateway:8080'
+    scrape_interval: 15s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: api-gateway:8080
+
+  # Auth Service
+  - job_name: 'auth-service'
+    static_configs:
+      - targets: 
+        - 'auth-service:3001'
+    scrape_interval: 15s
+    metrics_path: /metrics
+    basic_auth:
+      username: 'prometheus'
+      password: 'monitoring-secret'
+
+  # User Service (.NET)
+  - job_name: 'user-service'
+    static_configs:
+      - targets: 
+        - 'user-service:3002'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Product Service (Go)
+  - job_name: 'product-service'
+    static_configs:
+      - targets: 
+        - 'product-service:3003'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Order Service (.NET)
+  - job_name: 'order-service'
+    static_configs:
+      - targets: 
+        - 'order-service:3004'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Payment Service (Go)
+  - job_name: 'payment-service'
+    static_configs:
+      - targets: 
+        - 'payment-service:3005'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Cart Service (NestJS)
+  - job_name: 'cart-service'
+    static_configs:
+      - targets: 
+        - 'cart-service:3006'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Inventory Service (Go)
+  - job_name: 'inventory-service'
+    static_configs:
+      - targets: 
+        - 'inventory-service:3007'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Shipping Service (NestJS)
+  - job_name: 'shipping-service'
+    static_configs:
+      - targets: 
+        - 'shipping-service:3008'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Promotion Service (.NET)
+  - job_name: 'promotion-service'
+    static_configs:
+      - targets: 
+        - 'promotion-service:3009'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Review Service (NestJS)
+  - job_name: 'review-service'
+    static_configs:
+      - targets: 
+        - 'review-service:3010'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Notification Service (Go)
+  - job_name: 'notification-service'
+    static_configs:
+      - targets: 
+        - 'notification-service:3011'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Admin Service (NestJS)
+  - job_name: 'admin-service'
+    static_configs:
+      - targets: 
+        - 'admin-service:3012'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Database Exporters
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: 
+        - 'postgres-exporter:9187'
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: 
+        - 'redis-exporter:9121'
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Message Queue Exporters
+  - job_name: 'kafka-exporter'
+    static_configs:
+      - targets: 
+        - 'kafka-exporter:9308'
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Infrastructure Services
+  - job_name: 'vault-exporter'
+    static_configs:
+      - targets: 
+        - 'vault:8200'
+    scrape_interval: 60s
+    metrics_path: /v1/sys/metrics
+    params:
+      format: ['prometheus']
+    bearer_token: 'vault-monitoring-token'
+
+  - job_name: 'keycloak-exporter'
+    static_configs:
+      - targets: 
+        - 'keycloak-exporter:8080'
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Frontend Applications
+  - job_name: 'customer-platform'
+    static_configs:
+      - targets: 
+        - 'customer-platform:3000'
+    scrape_interval: 30s
+    metrics_path: /api/metrics
+
+  - job_name: 'admin-dashboard'
+    static_configs:
+      - targets: 
+        - 'admin-dashboard:3100'
+    scrape_interval: 30s
+    metrics_path: /api/metrics
+
+  # Load Balancer
+  - job_name: 'nginx-exporter'
+    static_configs:
+      - targets: 
+        - 'nginx-exporter:9113'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Blackbox Exporter (External monitoring)
+  - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - https://ecommerce.example.com
+        - https://api.ecommerce.example.com/health
+        - https://admin.ecommerce.example.com
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # Custom Business Metrics
+  - job_name: 'business-metrics'
+    static_configs:
+      - targets: 
+        - 'business-metrics-exporter:8080'
+    scrape_interval: 60s
+    metrics_path: /metrics
+
+# Remote write configuration for long-term storage
+remote_write:
+  - url: "http://thanos-receive:19291/api/v1/receive"
+    queue_config:
+      max_samples_per_send: 1000
+      max_shards: 200
+      capacity: 2500
+
+# Remote read configuration
+remote_read:
+  - url: "http://thanos-query:9090/api/v1/query"
+    read_recent: true

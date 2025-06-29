@@ -1,0 +1,195 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-rules
+  namespace: falco-system
+  labels:
+    app.kubernetes.io/name: falco
+    app.kubernetes.io/component: security
+data:
+  ecommerce_rules.yaml: |
+    # E-commerce specific Falco rules
+    
+    # Detect unauthorized process execution
+    - rule: Unauthorized Process in E-commerce Container
+      desc: Detect unauthorized processes running in e-commerce containers
+      condition: >
+        spawned_process and
+        container and
+        k8s.ns.name in (ecommerce-prod, ecommerce-staging, ecommerce-dev) and
+        not proc.name in (node, java, dotnet, go, nginx, redis-server, postgres, mongod)
+      output: >
+        Unauthorized process started in e-commerce container
+        (user=%user.name command=%proc.cmdline container=%container.name
+        image=%container.image.repository:%container.image.tag)
+      priority: WARNING
+      tags: [process, container, ecommerce]
+    
+    # Detect file modifications in read-only containers
+    - rule: Write to Read-Only Filesystem in E-commerce
+      desc: Detect writes to read-only filesystem in e-commerce containers
+      condition: >
+        open_write and
+        container and
+        k8s.ns.name in (ecommerce-prod, ecommerce-staging, ecommerce-dev) and
+        fd.name startswith /
+      output: >
+        Write to read-only filesystem in e-commerce container
+        (user=%user.name command=%proc.cmdline file=%fd.name
+        container=%container.name image=%container.image.repository:%container.image.tag)
+      priority: ERROR
+      tags: [filesystem, container, ecommerce]
+    
+    # Detect network connections to suspicious IPs
+    - rule: Suspicious Network Connection from E-commerce
+      desc: Detect network connections to suspicious IPs from e-commerce containers
+      condition: >
+        outbound and
+        container and
+        k8s.ns.name in (ecommerce-prod, ecommerce-staging, ecommerce-dev) and
+        not fd.sip in (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) and
+        not fd.sport in (80, 443, 53, 123)
+      output: >
+        Suspicious network connection from e-commerce container
+        (user=%user.name command=%proc.cmdline connection=%fd.name
+        container=%container.name image=%container.image.repository:%container.image.tag)
+      priority: WARNING
+      tags: [network, container, ecommerce]
+    
+    # Detect privilege escalation attempts
+    - rule: Privilege Escalation in E-commerce Container
+      desc: Detect privilege escalation attempts in e-commerce containers
+      condition: >
+        spawned_process and
+        container and
+        k8s.ns.name in (ecommerce-prod, ecommerce-staging, ecommerce-dev) and
+        proc.name in (sudo, su, doas) and
+        not user.name=root
+      output: >
+        Privilege escalation attempt in e-commerce container
+        (user=%user.name command=%proc.cmdline container=%container.name
+        image=%container.image.repository:%container.image.tag)
+      priority: CRITICAL
+      tags: [privilege_escalation, container, ecommerce]
+    
+    # Detect sensitive file access
+    - rule: Sensitive File Access in E-commerce
+      desc: Detect access to sensitive files in e-commerce containers
+      condition: >
+        open_read and
+        container and
+        k8s.ns.name in (ecommerce-prod, ecommerce-staging, ecommerce-dev) and
+        fd.name in (/etc/passwd, /etc/shadow, /etc/hosts, /etc/hostname, /etc/resolv.conf)
+      output: >
+        Sensitive file accessed in e-commerce container
+        (user=%user.name command=%proc.cmdline file=%fd.name
+        container=%container.name image=%container.image.repository:%container.image.tag)
+      priority: WARNING
+      tags: [filesystem, sensitive, container, ecommerce]
+    
+    # Detect container drift
+    - rule: Container Drift in E-commerce
+      desc: Detect new processes not in original container image
+      condition: >
+        spawned_process and
+        container and
+        k8s.ns.name in (ecommerce-prod, ecommerce-staging, ecommerce-dev) and
+        not proc.name in (node, npm, java, dotnet, go, sh, bash)
+      output: >
+        Container drift detected in e-commerce container
+        (user=%user.name command=%proc.cmdline container=%container.name
+        image=%container.image.repository:%container.image.tag)
+      priority: WARNING
+      tags: [container_drift, container, ecommerce]
+    
+    # Detect crypto mining activities
+    - rule: Crypto Mining in E-commerce Container
+      desc: Detect potential crypto mining activities
+      condition: >
+        spawned_process and
+        container and
+        k8s.ns.name in (ecommerce-prod, ecommerce-staging, ecommerce-dev) and
+        proc.name in (xmrig, cpuminer, cgminer, bfgminer, sgminer, nheqminer)
+      output: >
+        Potential crypto mining detected in e-commerce container
+        (user=%user.name command=%proc.cmdline container=%container.name
+        image=%container.image.repository:%container.image.tag)
+      priority: CRITICAL
+      tags: [crypto_mining, container, ecommerce]
+    
+    # Detect shell spawning in production
+    - rule: Shell Spawned in Production E-commerce Container
+      desc: Detect shell spawning in production e-commerce containers
+      condition: >
+        spawned_process and
+        container and
+        k8s.ns.name=ecommerce-prod and
+        proc.name in (sh, bash, zsh, fish, csh, tcsh, dash)
+      output: >
+        Shell spawned in production e-commerce container
+        (user=%user.name command=%proc.cmdline container=%container.name
+        image=%container.image.repository:%container.image.tag)
+      priority: CRITICAL
+      tags: [shell, production, container, ecommerce]
+    
+    # Detect package manager usage
+    - rule: Package Manager in E-commerce Container
+      desc: Detect package manager usage in e-commerce containers
+      condition: >
+        spawned_process and
+        container and
+        k8s.ns.name in (ecommerce-prod, ecommerce-staging, ecommerce-dev) and
+        proc.name in (apt, apt-get, yum, dnf, zypper, apk, pip, npm, yarn, composer, gem)
+      output: >
+        Package manager used in e-commerce container
+        (user=%user.name command=%proc.cmdline container=%container.name
+        image=%container.image.repository:%container.image.tag)
+      priority: WARNING
+      tags: [package_manager, container, ecommerce]
+    
+    # Detect database access from unexpected containers
+    - rule: Unexpected Database Access from E-commerce
+      desc: Detect database access from unexpected e-commerce containers
+      condition: >
+        outbound and
+        container and
+        k8s.ns.name in (ecommerce-prod, ecommerce-staging, ecommerce-dev) and
+        fd.sport in (5432, 3306, 27017, 6379, 9200) and
+        not k8s.pod.name contains "database" and
+        not k8s.pod.name contains "migration"
+      output: >
+        Unexpected database access from e-commerce container
+        (user=%user.name command=%proc.cmdline connection=%fd.name
+        container=%container.name image=%container.image.repository:%container.image.tag)
+      priority: WARNING
+      tags: [database, network, container, ecommerce]
+    
+    # Detect high CPU usage (potential DoS or crypto mining)
+    - rule: High CPU Usage in E-commerce Container
+      desc: Detect abnormally high CPU usage in e-commerce containers
+      condition: >
+        spawned_process and
+        container and
+        k8s.ns.name in (ecommerce-prod, ecommerce-staging, ecommerce-dev) and
+        proc.cpu_usage > 80
+      output: >
+        High CPU usage detected in e-commerce container
+        (user=%user.name command=%proc.cmdline cpu_usage=%proc.cpu_usage
+        container=%container.name image=%container.image.repository:%container.image.tag)
+      priority: WARNING
+      tags: [performance, container, ecommerce]
+    
+    # Detect secrets access
+    - rule: Secrets Access in E-commerce Container
+      desc: Detect access to Kubernetes secrets from e-commerce containers
+      condition: >
+        open_read and
+        container and
+        k8s.ns.name in (ecommerce-prod, ecommerce-staging, ecommerce-dev) and
+        fd.name startswith /var/run/secrets/kubernetes.io/serviceaccount
+      output: >
+        Kubernetes secrets accessed in e-commerce container
+        (user=%user.name command=%proc.cmdline file=%fd.name
+        container=%container.name image=%container.image.repository:%container.image.tag)
+      priority: INFO
+      tags: [secrets, kubernetes, container, ecommerce]

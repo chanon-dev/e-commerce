@@ -1,0 +1,92 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: ecommerce
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/component: application
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce-k8s-manifests
+    targetRevision: HEAD
+    path: k8s/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10
+  info:
+    - name: 'Environment'
+      value: 'Development'
+    - name: 'Team'
+      value: 'E-commerce Platform Team'
+    - name: 'Documentation'
+      value: 'https://docs.ecommerce.com/dev'
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: ""
+      kind: Service
+      jsonPointers:
+        - /spec/clusterIP
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-dev-monitoring
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: ecommerce-monitoring
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/component: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce-k8s-manifests
+    targetRevision: HEAD
+    path: k8s/monitoring/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-monitoring-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,429 @@
+version: '3.8'
+
+# Independent Microservices - Each service can be deployed separately
+services:
+  # API Gateway - Entry point for all requests
+  api-gateway:
+    build: ./backend/api-gateway
+    container_name: ecommerce-api-gateway
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_ROLE_ID=${API_GATEWAY_VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${API_GATEWAY_VAULT_SECRET_ID}
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=ecommerce
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - redis
+      - kafka
+      - vault
+      - keycloak
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Auth Service - Authentication and Authorization
+  auth-service:
+    build: ./backend/auth-service
+    container_name: ecommerce-auth-service
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - DATABASE_URL=postgresql://auth_user:auth_pass@postgres:5432/ecommerce_auth
+      - REDIS_URL=redis://redis:6379/0
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_ROLE_ID=${AUTH_SERVICE_VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${AUTH_SERVICE_VAULT_SECRET_ID}
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=ecommerce
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_GROUP_ID=auth-service-group
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+      - vault
+      - keycloak
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # User Service - User management
+  user-service:
+    build: ./backend/user-service
+    container_name: ecommerce-user-service
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:3002
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=ecommerce_users;Username=user_service;Password=user_pass
+      - Vault__Address=http://vault:8200
+      - Vault__RoleId=${USER_SERVICE_VAULT_ROLE_ID}
+      - Vault__SecretId=${USER_SERVICE_VAULT_SECRET_ID}
+      - Kafka__BootstrapServers=kafka:9092
+      - Kafka__GroupId=user-service-group
+      - ServiceDiscovery__ApiGateway=http://api-gateway:3000
+    depends_on:
+      - postgres
+      - kafka
+      - vault
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Product Service - Product catalog
+  product-service:
+    build: ./backend/product-service
+    container_name: ecommerce-product-service
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    environment:
+      - GIN_MODE=debug
+      - PORT=3003
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=product_service
+      - DB_PASSWORD=product_pass
+      - DB_NAME=ecommerce_products
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_ROLE_ID=${PRODUCT_SERVICE_VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${PRODUCT_SERVICE_VAULT_SECRET_ID}
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_GROUP_ID=product-service-group
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - SERVICE_DISCOVERY_API_GATEWAY=http://api-gateway:3000
+    depends_on:
+      - postgres
+      - elasticsearch
+      - kafka
+      - vault
+      - minio
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Cart Service - Shopping cart
+  cart-service:
+    build: ./backend/cart-service
+    container_name: ecommerce-cart-service
+    restart: unless-stopped
+    ports:
+      - "3006:3006"
+    environment:
+      - NODE_ENV=development
+      - PORT=3006
+      - REDIS_URL=redis://redis:6379/1
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_ROLE_ID=${CART_SERVICE_VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${CART_SERVICE_VAULT_SECRET_ID}
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_GROUP_ID=cart-service-group
+      - SERVICE_DISCOVERY_PRODUCT_SERVICE=http://product-service:3003
+      - SERVICE_DISCOVERY_USER_SERVICE=http://user-service:3002
+    depends_on:
+      - redis
+      - kafka
+      - vault
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Order Service - Order processing
+  order-service:
+    build: ./backend/order-service
+    container_name: ecommerce-order-service
+    restart: unless-stopped
+    ports:
+      - "3004:3004"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:3004
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=ecommerce_orders;Username=order_service;Password=order_pass
+      - ConnectionStrings__MongoDb=mongodb://admin:admin123@mongo:27017/ecommerce_orders?authSource=admin
+      - Vault__Address=http://vault:8200
+      - Vault__RoleId=${ORDER_SERVICE_VAULT_ROLE_ID}
+      - Vault__SecretId=${ORDER_SERVICE_VAULT_SECRET_ID}
+      - Kafka__BootstrapServers=kafka:9092
+      - Kafka__GroupId=order-service-group
+      - ServiceDiscovery__UserService=http://user-service:3002
+      - ServiceDiscovery__ProductService=http://product-service:3003
+      - ServiceDiscovery__InventoryService=http://inventory-service:3007
+      - ServiceDiscovery__PaymentService=http://payment-service:3005
+    depends_on:
+      - postgres
+      - mongo
+      - kafka
+      - vault
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Payment Service - Payment processing
+  payment-service:
+    build: ./backend/payment-service
+    container_name: ecommerce-payment-service
+    restart: unless-stopped
+    ports:
+      - "3005:3005"
+    environment:
+      - GIN_MODE=debug
+      - PORT=3005
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=payment_service
+      - DB_PASSWORD=payment_pass
+      - DB_NAME=ecommerce_payments
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_ROLE_ID=${PAYMENT_SERVICE_VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${PAYMENT_SERVICE_VAULT_SECRET_ID}
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_GROUP_ID=payment-service-group
+      - SERVICE_DISCOVERY_ORDER_SERVICE=http://order-service:3004
+    depends_on:
+      - postgres
+      - kafka
+      - vault
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Inventory Service - Stock management
+  inventory-service:
+    build: ./backend/inventory-service
+    container_name: ecommerce-inventory-service
+    restart: unless-stopped
+    ports:
+      - "3007:3007"
+    environment:
+      - GIN_MODE=debug
+      - PORT=3007
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=inventory_service
+      - DB_PASSWORD=inventory_pass
+      - DB_NAME=ecommerce_inventory
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_ROLE_ID=${INVENTORY_SERVICE_VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${INVENTORY_SERVICE_VAULT_SECRET_ID}
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_GROUP_ID=inventory-service-group
+      - SERVICE_DISCOVERY_PRODUCT_SERVICE=http://product-service:3003
+    depends_on:
+      - postgres
+      - kafka
+      - vault
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3007/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Shipping Service - Shipping management
+  shipping-service:
+    build: ./backend/shipping-service
+    container_name: ecommerce-shipping-service
+    restart: unless-stopped
+    ports:
+      - "3008:3008"
+    environment:
+      - NODE_ENV=development
+      - PORT=3008
+      - DATABASE_URL=postgresql://shipping_service:shipping_pass@postgres:5432/ecommerce_shipping
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_ROLE_ID=${SHIPPING_SERVICE_VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${SHIPPING_SERVICE_VAULT_SECRET_ID}
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_GROUP_ID=shipping-service-group
+      - SERVICE_DISCOVERY_ORDER_SERVICE=http://order-service:3004
+    depends_on:
+      - postgres
+      - kafka
+      - vault
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3008/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Promotion Service - Promotions and coupons
+  promotion-service:
+    build: ./backend/promotion-service
+    container_name: ecommerce-promotion-service
+    restart: unless-stopped
+    ports:
+      - "3009:3009"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:3009
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=ecommerce_promotions;Username=promotion_service;Password=promotion_pass
+      - ConnectionStrings__Redis=redis:6379,abortConnect=false
+      - Vault__Address=http://vault:8200
+      - Vault__RoleId=${PROMOTION_SERVICE_VAULT_ROLE_ID}
+      - Vault__SecretId=${PROMOTION_SERVICE_VAULT_SECRET_ID}
+      - Kafka__BootstrapServers=kafka:9092
+      - Kafka__GroupId=promotion-service-group
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+      - vault
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3009/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Review Service - Product reviews
+  review-service:
+    build: ./backend/review-service
+    container_name: ecommerce-review-service
+    restart: unless-stopped
+    ports:
+      - "3010:3010"
+    environment:
+      - NODE_ENV=development
+      - PORT=3010
+      - MONGODB_URI=mongodb://admin:admin123@mongo:27017/ecommerce_reviews?authSource=admin
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_ROLE_ID=${REVIEW_SERVICE_VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${REVIEW_SERVICE_VAULT_SECRET_ID}
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_GROUP_ID=review-service-group
+      - SERVICE_DISCOVERY_PRODUCT_SERVICE=http://product-service:3003
+      - SERVICE_DISCOVERY_ORDER_SERVICE=http://order-service:3004
+    depends_on:
+      - mongo
+      - kafka
+      - vault
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Notification Service - Notifications
+  notification-service:
+    build: ./backend/notification-service
+    container_name: ecommerce-notification-service
+    restart: unless-stopped
+    ports:
+      - "3011:3011"
+    environment:
+      - GIN_MODE=debug
+      - PORT=3011
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=notification_service
+      - DB_PASSWORD=notification_pass
+      - DB_NAME=ecommerce_notifications
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_ROLE_ID=${NOTIFICATION_SERVICE_VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${NOTIFICATION_SERVICE_VAULT_SECRET_ID}
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_GROUP_ID=notification-service-group
+      - SMTP_HOST=mailhog
+      - SMTP_PORT=1025
+    depends_on:
+      - postgres
+      - kafka
+      - vault
+      - mailhog
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3011/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Admin Service - Admin operations
+  admin-service:
+    build: ./backend/admin-service
+    container_name: ecommerce-admin-service
+    restart: unless-stopped
+    ports:
+      - "3012:3012"
+    environment:
+      - NODE_ENV=development
+      - PORT=3012
+      - DATABASE_URL=postgresql://admin_service:admin_pass@postgres:5432/ecommerce_admin
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_ROLE_ID=${ADMIN_SERVICE_VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${ADMIN_SERVICE_VAULT_SECRET_ID}
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_GROUP_ID=admin-service-group
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=ecommerce
+    depends_on:
+      - postgres
+      - kafka
+      - vault
+      - keycloak
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3012/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  ecommerce-network:
+    external: true
+
+# Each service can be started independently:
+# docker-compose -f docker-compose.services.yml up api-gateway
+# docker-compose -f docker-compose.services.yml up user-service
+# docker-compose -f docker-compose.services.yml up product-service
+# etc.

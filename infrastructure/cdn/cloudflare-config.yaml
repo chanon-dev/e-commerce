@@ -1,0 +1,321 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflare-config
+  namespace: ecommerce-prod
+data:
+  cloudflare.yaml: |
+    # Cloudflare CDN Configuration for E-commerce Platform
+    
+    # Zone Settings
+    zone_settings:
+      # Performance Settings
+      - setting: "always_online"
+        value: "on"
+      - setting: "browser_cache_ttl"
+        value: 31536000  # 1 year
+      - setting: "cache_level"
+        value: "aggressive"
+      - setting: "development_mode"
+        value: "off"
+      - setting: "edge_cache_ttl"
+        value: 7776000  # 90 days
+      - setting: "minify"
+        value:
+          css: "on"
+          html: "on"
+          js: "on"
+      - setting: "mirage"
+        value: "on"
+      - setting: "polish"
+        value: "lossless"
+      - setting: "rocket_loader"
+        value: "on"
+      
+      # Security Settings
+      - setting: "security_level"
+        value: "medium"
+      - setting: "ssl"
+        value: "strict"
+      - setting: "tls_1_3"
+        value: "on"
+      - setting: "always_use_https"
+        value: "on"
+      - setting: "automatic_https_rewrites"
+        value: "on"
+      - setting: "browser_check"
+        value: "on"
+      - setting: "challenge_ttl"
+        value: 1800
+      - setting: "email_obfuscation"
+        value: "on"
+      - setting: "hotlink_protection"
+        value: "on"
+      - setting: "ip_geolocation"
+        value: "on"
+      - setting: "server_side_exclude"
+        value: "on"
+      - setting: "waf"
+        value: "on"
+    
+    # Page Rules
+    page_rules:
+      # Static Assets - Long Cache
+      - targets:
+          - target: "url"
+            constraint:
+              operator: "matches"
+              value: "*.ecommerce.com/static/*"
+        actions:
+          - id: "cache_level"
+            value: "cache_everything"
+          - id: "edge_cache_ttl"
+            value: 31536000  # 1 year
+          - id: "browser_cache_ttl"
+            value: 31536000  # 1 year
+        priority: 1
+        status: "active"
+      
+      # Images - Medium Cache
+      - targets:
+          - target: "url"
+            constraint:
+              operator: "matches"
+              value: "*.ecommerce.com/images/*"
+        actions:
+          - id: "cache_level"
+            value: "cache_everything"
+          - id: "edge_cache_ttl"
+            value: 2592000  # 30 days
+          - id: "browser_cache_ttl"
+            value: 2592000  # 30 days
+          - id: "polish"
+            value: "lossless"
+        priority: 2
+        status: "active"
+      
+      # API Endpoints - No Cache
+      - targets:
+          - target: "url"
+            constraint:
+              operator: "matches"
+              value: "api.ecommerce.com/api/*"
+        actions:
+          - id: "cache_level"
+            value: "bypass"
+          - id: "disable_performance"
+            value: true
+        priority: 3
+        status: "active"
+      
+      # Admin Dashboard - No Cache
+      - targets:
+          - target: "url"
+            constraint:
+              operator: "matches"
+              value: "admin.ecommerce.com/*"
+        actions:
+          - id: "cache_level"
+            value: "bypass"
+          - id: "security_level"
+            value: "high"
+        priority: 4
+        status: "active"
+    
+    # Workers (Edge Computing)
+    workers:
+      - name: "image-optimization"
+        script: |
+          addEventListener('fetch', event => {
+            event.respondWith(handleRequest(event.request))
+          })
+          
+          async function handleRequest(request) {
+            const url = new URL(request.url)
+            
+            // Only process image requests
+            if (!url.pathname.match(/\.(jpg|jpeg|png|webp|gif)$/i)) {
+              return fetch(request)
+            }
+            
+            // Get accept header to determine supported formats
+            const accept = request.headers.get('Accept') || ''
+            
+            // Modify URL for image optimization
+            if (accept.includes('image/webp')) {
+              url.searchParams.set('format', 'webp')
+            }
+            
+            // Add quality parameter
+            if (!url.searchParams.has('quality')) {
+              url.searchParams.set('quality', '85')
+            }
+            
+            // Add width parameter for responsive images
+            const width = url.searchParams.get('w')
+            if (width) {
+              url.searchParams.set('width', width)
+            }
+            
+            const response = await fetch(url.toString(), {
+              headers: request.headers,
+            })
+            
+            // Add cache headers
+            const newResponse = new Response(response.body, response)
+            newResponse.headers.set('Cache-Control', 'public, max-age=31536000')
+            newResponse.headers.set('Vary', 'Accept')
+            
+            return newResponse
+          }
+        routes:
+          - pattern: "*.ecommerce.com/images/*"
+            zone: "ecommerce.com"
+      
+      - name: "api-rate-limiting"
+        script: |
+          addEventListener('fetch', event => {
+            event.respondWith(handleRequest(event.request))
+          })
+          
+          async function handleRequest(request) {
+            const url = new URL(request.url)
+            const clientIP = request.headers.get('CF-Connecting-IP')
+            const userAgent = request.headers.get('User-Agent') || ''
+            
+            // Rate limiting logic
+            const rateLimitKey = `rate_limit:${clientIP}`
+            const currentTime = Math.floor(Date.now() / 1000)
+            const windowSize = 60 // 1 minute
+            const maxRequests = 100
+            
+            // Check rate limit (simplified - in production use KV store)
+            const requestCount = await getRequestCount(rateLimitKey, currentTime, windowSize)
+            
+            if (requestCount > maxRequests) {
+              return new Response('Rate limit exceeded', {
+                status: 429,
+                headers: {
+                  'Retry-After': '60',
+                  'X-RateLimit-Limit': maxRequests.toString(),
+                  'X-RateLimit-Remaining': '0',
+                  'X-RateLimit-Reset': (currentTime + windowSize).toString(),
+                },
+              })
+            }
+            
+            // Forward request
+            const response = await fetch(request)
+            
+            // Add rate limit headers
+            const newResponse = new Response(response.body, response)
+            newResponse.headers.set('X-RateLimit-Limit', maxRequests.toString())
+            newResponse.headers.set('X-RateLimit-Remaining', (maxRequests - requestCount - 1).toString())
+            newResponse.headers.set('X-RateLimit-Reset', (currentTime + windowSize).toString())
+            
+            return newResponse
+          }
+          
+          async function getRequestCount(key, currentTime, windowSize) {
+            // Simplified implementation - use Cloudflare KV in production
+            return Math.floor(Math.random() * 50) // Mock implementation
+          }
+        routes:
+          - pattern: "api.ecommerce.com/api/*"
+            zone: "ecommerce.com"
+    
+    # DNS Records
+    dns_records:
+      - type: "A"
+        name: "ecommerce.com"
+        content: "104.16.123.456"  # Cloudflare IP
+        proxied: true
+        ttl: 1  # Auto
+      - type: "CNAME"
+        name: "www"
+        content: "ecommerce.com"
+        proxied: true
+        ttl: 1
+      - type: "CNAME"
+        name: "api"
+        content: "ecommerce.com"
+        proxied: true
+        ttl: 1
+      - type: "CNAME"
+        name: "admin"
+        content: "ecommerce.com"
+        proxied: true
+        ttl: 1
+      - type: "CNAME"
+        name: "cdn"
+        content: "ecommerce.com"
+        proxied: true
+        ttl: 1
+    
+    # Load Balancing
+    load_balancers:
+      - name: "api-load-balancer"
+        fallback_pool: "api-pool-primary"
+        default_pools:
+          - "api-pool-primary"
+        region_pools:
+          WNAM:  # Western North America
+            - "api-pool-west"
+          ENAM:  # Eastern North America
+            - "api-pool-east"
+          WEU:   # Western Europe
+            - "api-pool-europe"
+          EAS:   # East Asia
+            - "api-pool-asia"
+        pop_pools: {}
+        proxied: true
+        enabled: true
+        ttl: 30
+        steering_policy: "dynamic_latency"
+        session_affinity: "cookie"
+        session_affinity_ttl: 3600
+    
+    # Origin Pools
+    origin_pools:
+      - name: "api-pool-primary"
+        origins:
+          - name: "api-primary-1"
+            address: "api-1.ecommerce.internal"
+            enabled: true
+            weight: 1
+          - name: "api-primary-2"
+            address: "api-2.ecommerce.internal"
+            enabled: true
+            weight: 1
+        monitor: "api-health-check"
+        enabled: true
+        minimum_origins: 1
+        notification_email: "ops@ecommerce.com"
+      
+      - name: "api-pool-west"
+        origins:
+          - name: "api-west-1"
+            address: "api-west-1.ecommerce.internal"
+            enabled: true
+            weight: 1
+        monitor: "api-health-check"
+        enabled: true
+        minimum_origins: 1
+    
+    # Health Checks
+    health_checks:
+      - name: "api-health-check"
+        type: "https"
+        method: "GET"
+        path: "/health"
+        interval: 60
+        timeout: 5
+        retries: 2
+        expected_codes: "200"
+        follow_redirects: false
+        allow_insecure: false
+        header:
+          Host:
+            - "api.ecommerce.com"
+          User-Agent:
+            - "Cloudflare-Health-Check"

@@ -1,0 +1,69 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: ecommerce
+    app.kubernetes.io/instance: prod
+    app.kubernetes.io/component: application
+    app.kubernetes.io/environment: production
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: ecommerce-deployments
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: ecommerce-alerts
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: ecommerce-alerts
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/your-org/ecommerce-k8s-manifests
+    targetRevision: HEAD
+    path: k8s/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-prod
+  syncPolicy:
+    # Production requires manual approval
+    automated:
+      prune: false  # Manual approval required for production
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 20
+  info:
+    - name: 'Environment'
+      value: 'Production'
+    - name: 'Team'
+      value: 'E-commerce Platform Team'
+    - name: 'Documentation'
+      value: 'https://docs.ecommerce.com/prod'
+    - name: 'Runbook'
+      value: 'https://runbooks.ecommerce.com/production'
+    - name: 'Monitoring'
+      value: 'https://grafana.ecommerce.com/d/ecommerce-prod'
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: ""
+      kind: Service
+      jsonPointers:
+        - /spec/clusterIP
+    - group: networking.k8s.io
+      kind: Ingress
+      jsonPointers:
+        - /status/loadBalancer

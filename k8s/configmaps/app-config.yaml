@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: ecommerce
+data:
+  # Database Configuration
+  POSTGRES_HOST: "postgres-service"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "ecommerce"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  MONGODB_HOST: "mongodb-service"
+  MONGODB_PORT: "27017"
+  ELASTICSEARCH_HOST: "elasticsearch-service"
+  ELASTICSEARCH_PORT: "9200"
+  
+  # Message Queue
+  KAFKA_BROKERS: "kafka-service:9092"
+  ZOOKEEPER_HOST: "zookeeper-service:2181"
+  
+  # Security Services
+  VAULT_ADDR: "http://vault-service:8200"
+  KEYCLOAK_URL: "http://keycloak-service:8080"
+  KEYCLOAK_REALM: "ecommerce"
+  KEYCLOAK_CLIENT_ID: "ecommerce-client"
+  
+  # Monitoring
+  PROMETHEUS_URL: "http://prometheus-service:9090"
+  GRAFANA_URL: "http://grafana-service:3000"
+  JAEGER_ENDPOINT: "http://jaeger-service:14268/api/traces"
+  
+  # Application Settings
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  API_GATEWAY_URL: "http://api-gateway-service:8080"
+  
+  # Frontend URLs
+  CUSTOMER_PLATFORM_URL: "http://customer-platform-service:3000"
+  ADMIN_DASHBOARD_URL: "http://admin-dashboard-service:3100"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: ecommerce
+data:
+  nginx.conf: |
+    upstream api_gateway {
+        server api-gateway-service:8080;
+    }
+    
+    upstream customer_platform {
+        server customer-platform-service:3000;
+    }
+    
+    upstream admin_dashboard {
+        server admin-dashboard-service:3100;
+    }
+    
+    server {
+        listen 80;
+        server_name localhost;
+        
+        # API Gateway
+        location /api/ {
+            proxy_pass http://api_gateway;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        
+        # Admin Dashboard
+        location /admin/ {
+            proxy_pass http://admin_dashboard/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        
+        # Customer Platform (default)
+        location / {
+            proxy_pass http://customer_platform;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }

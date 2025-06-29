@@ -1,0 +1,188 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ecommerce-network-policy
+  namespace: ecommerce-prod
+  labels:
+    app.kubernetes.io/name: ecommerce
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow ingress from ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+  # Allow ingress from monitoring namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9090  # Metrics
+  # Allow inter-service communication within namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ecommerce-prod
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 3001
+    - protocol: TCP
+      port: 3002
+    - protocol: TCP
+      port: 3003
+    - protocol: TCP
+      port: 3004
+    - protocol: TCP
+      port: 3005
+    - protocol: TCP
+      port: 3006
+    - protocol: TCP
+      port: 3007
+    - protocol: TCP
+      port: 3008
+    - protocol: TCP
+      port: 3009
+    - protocol: TCP
+      port: 3010
+    - protocol: TCP
+      port: 3011
+    - protocol: TCP
+      port: 3012
+  egress:
+  # Allow egress to DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow egress to databases
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: ecommerce-data
+    ports:
+    - protocol: TCP
+      port: 5432  # PostgreSQL
+    - protocol: TCP
+      port: 6379  # Redis
+    - protocol: TCP
+      port: 27017 # MongoDB
+    - protocol: TCP
+      port: 9200  # Elasticsearch
+  # Allow egress to Kafka
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: ecommerce-messaging
+    ports:
+    - protocol: TCP
+      port: 9092  # Kafka
+  # Allow egress to external services (HTTPS only)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow egress to monitoring
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9090  # Prometheus
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-network-policy
+  namespace: ecommerce-data
+  labels:
+    app.kubernetes.io/name: ecommerce-data
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Only allow ingress from ecommerce services
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ecommerce-prod
+    - namespaceSelector:
+        matchLabels:
+          name: ecommerce-staging
+    - namespaceSelector:
+        matchLabels:
+          name: ecommerce-dev
+    ports:
+    - protocol: TCP
+      port: 5432  # PostgreSQL
+    - protocol: TCP
+      port: 6379  # Redis
+    - protocol: TCP
+      port: 27017 # MongoDB
+    - protocol: TCP
+      port: 9200  # Elasticsearch
+  # Allow monitoring
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9100  # Node exporter
+    - protocol: TCP
+      port: 9187  # PostgreSQL exporter
+    - protocol: TCP
+      port: 9121  # Redis exporter
+  egress:
+  # Allow DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow database replication (if needed)
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: ecommerce-data
+    ports:
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 6379
+    - protocol: TCP
+      port: 27017
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-default
+  namespace: ecommerce-prod
+  labels:
+    app.kubernetes.io/name: ecommerce
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  # This policy denies all traffic by default
+  # Other policies will explicitly allow required traffic

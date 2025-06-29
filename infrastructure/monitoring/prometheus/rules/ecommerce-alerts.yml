@@ -1,0 +1,291 @@
+groups:
+  # Infrastructure Alerts
+  - name: infrastructure
+    rules:
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80% on {{ $labels.instance }} for more than 5 minutes"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 85% on {{ $labels.instance }} for more than 5 minutes"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+          team: infrastructure
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is below 10% on {{ $labels.instance }} {{ $labels.mountpoint }}"
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Service is down"
+          description: "{{ $labels.job }} service is down on {{ $labels.instance }}"
+
+  # Application Performance Alerts
+  - name: application-performance
+    rules:
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is above 2 seconds for {{ $labels.job }}"
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) * 100 > 5
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is above 5% for {{ $labels.job }} (current: {{ $value }}%)"
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: db_connection_pool_active / db_connection_pool_max > 0.9
+        for: 2m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Connection pool usage is above 90% for {{ $labels.job }}"
+
+  # Business Metrics Alerts
+  - name: business-metrics
+    rules:
+      - alert: LowOrderVolume
+        expr: increase(orders_total[1h]) < 10
+        for: 30m
+        labels:
+          severity: warning
+          team: business
+        annotations:
+          summary: "Low order volume detected"
+          description: "Only {{ $value }} orders in the last hour, which is below normal"
+
+      - alert: HighCartAbandonmentRate
+        expr: (increase(cart_abandoned_total[1h]) / increase(cart_created_total[1h])) * 100 > 70
+        for: 15m
+        labels:
+          severity: warning
+          team: business
+        annotations:
+          summary: "High cart abandonment rate"
+          description: "Cart abandonment rate is {{ $value }}% in the last hour"
+
+      - alert: PaymentFailureSpike
+        expr: increase(payment_failures_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+          team: payments
+        annotations:
+          summary: "Payment failure spike detected"
+          description: "{{ $value }} payment failures in the last 5 minutes"
+
+      - alert: InventoryLow
+        expr: inventory_quantity < inventory_low_threshold
+        for: 1m
+        labels:
+          severity: warning
+          team: inventory
+        annotations:
+          summary: "Low inventory alert"
+          description: "Product {{ $labels.product_id }} has low inventory: {{ $value }} units remaining"
+
+      - alert: InventoryOutOfStock
+        expr: inventory_quantity == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: inventory
+        annotations:
+          summary: "Product out of stock"
+          description: "Product {{ $labels.product_id }} is out of stock"
+
+  # Security Alerts
+  - name: security
+    rules:
+      - alert: SuspiciousLoginActivity
+        expr: increase(failed_login_attempts_total[5m]) > 50
+        for: 1m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Suspicious login activity detected"
+          description: "{{ $value }} failed login attempts in the last 5 minutes from {{ $labels.source_ip }}"
+
+      - alert: UnauthorizedAPIAccess
+        expr: increase(http_requests_total{status="401"}[5m]) > 100
+        for: 2m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "High number of unauthorized API requests"
+          description: "{{ $value }} unauthorized requests to {{ $labels.job }} in the last 5 minutes"
+
+      - alert: SQLInjectionAttempt
+        expr: increase(security_sql_injection_attempts_total[1m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "SQL injection attempt detected"
+          description: "SQL injection attempt detected from {{ $labels.source_ip }} on {{ $labels.endpoint }}"
+
+      - alert: RateLimitExceeded
+        expr: increase(rate_limit_exceeded_total[1m]) > 100
+        for: 1m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Rate limit frequently exceeded"
+          description: "Rate limit exceeded {{ $value }} times in the last minute for {{ $labels.client_id }}"
+
+  # Database Alerts
+  - name: database
+    rules:
+      - alert: PostgreSQLDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: database
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL instance {{ $labels.instance }} is down"
+
+      - alert: PostgreSQLHighConnections
+        expr: pg_stat_database_numbackends / pg_settings_max_connections * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "PostgreSQL high connection usage"
+          description: "PostgreSQL connection usage is above 80% on {{ $labels.instance }}"
+
+      - alert: PostgreSQLSlowQueries
+        expr: rate(pg_stat_database_tup_returned[5m]) / rate(pg_stat_database_tup_fetched[5m]) < 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "PostgreSQL slow queries detected"
+          description: "Query efficiency is low on {{ $labels.instance }} database {{ $labels.datname }}"
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: database
+        annotations:
+          summary: "Redis is down"
+          description: "Redis instance {{ $labels.instance }} is down"
+
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "Redis high memory usage"
+          description: "Redis memory usage is above 90% on {{ $labels.instance }}"
+
+  # Kafka Alerts
+  - name: kafka
+    rules:
+      - alert: KafkaBrokerDown
+        expr: kafka_brokers == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: messaging
+        annotations:
+          summary: "Kafka broker is down"
+          description: "Kafka broker {{ $labels.instance }} is down"
+
+      - alert: KafkaConsumerLag
+        expr: kafka_consumer_lag_sum > 1000
+        for: 5m
+        labels:
+          severity: warning
+          team: messaging
+        annotations:
+          summary: "Kafka consumer lag is high"
+          description: "Consumer group {{ $labels.consumergroup }} has lag of {{ $value }} messages"
+
+      - alert: KafkaTopicPartitionOffline
+        expr: kafka_topic_partition_leader == -1
+        for: 1m
+        labels:
+          severity: critical
+          team: messaging
+        annotations:
+          summary: "Kafka partition is offline"
+          description: "Topic {{ $labels.topic }} partition {{ $labels.partition }} has no leader"
+
+  # Frontend Alerts
+  - name: frontend
+    rules:
+      - alert: HighJavaScriptErrors
+        expr: increase(javascript_errors_total[5m]) > 50
+        for: 2m
+        labels:
+          severity: warning
+          team: frontend
+        annotations:
+          summary: "High JavaScript error rate"
+          description: "{{ $value }} JavaScript errors in the last 5 minutes on {{ $labels.page }}"
+
+      - alert: SlowPageLoad
+        expr: histogram_quantile(0.95, rate(page_load_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: frontend
+        annotations:
+          summary: "Slow page load times"
+          description: "95th percentile page load time is {{ $value }} seconds for {{ $labels.page }}"
+
+      - alert: HighBounceRate
+        expr: (increase(page_exits_total[1h]) / increase(page_views_total[1h])) * 100 > 80
+        for: 30m
+        labels:
+          severity: warning
+          team: frontend
+        annotations:
+          summary: "High bounce rate detected"
+          description: "Bounce rate is {{ $value }}% for {{ $labels.page }} in the last hour"

@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  product-service-db:
+    image: postgres:15-alpine
+    container_name: product-service-db
+    environment:
+      - POSTGRES_DB=product_service
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5433:5432"
+    volumes:
+      - product_service_db_data:/var/lib/postgresql/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d product_service"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  product-service-redis:
+    image: redis:7-alpine
+    container_name: product-service-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - product_service_redis_data:/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  product-service-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: product-service-api
+    environment:
+      - GIN_MODE=release
+      - PORT=3003
+      - DB_HOST=product-service-db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+      - DB_NAME=product_service
+      - DB_SSLMODE=disable
+      - REDIS_HOST=product-service-redis
+      - REDIS_PORT=6379
+    ports:
+      - "3003:3003"
+    depends_on:
+      product-service-db:
+        condition: service_healthy
+      product-service-redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  product_service_db_data:
+    driver: local
+  product_service_redis_data:
+    driver: local
+
+networks:
+  ecommerce-network:
+    driver: bridge
+    external: true
