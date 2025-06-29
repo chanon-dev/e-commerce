@@ -1,356 +1,68 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: jenkins
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: jenkins
-  namespace: jenkins
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: jenkins
-rules:
-- apiGroups: [""]
-  resources: ["pods", "services", "endpoints", "persistentvolumeclaims", "events", "configmaps", "secrets"]
-  verbs: ["*"]
-- apiGroups: ["apps"]
-  resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
-  verbs: ["*"]
-- apiGroups: ["extensions"]
-  resources: ["deployments", "daemonsets", "replicasets", "ingresses"]
-  verbs: ["*"]
-- apiGroups: ["networking.k8s.io"]
-  resources: ["ingresses"]
-  verbs: ["*"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: jenkins
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: jenkins
-subjects:
-- kind: ServiceAccount
-  name: jenkins
-  namespace: jenkins
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: jenkins-pvc
-  namespace: jenkins
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 20Gi
-  storageClassName: gp2
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: jenkins-config
-  namespace: jenkins
-data:
-  jenkins.yaml: |
-    jenkins:
-      systemMessage: "E-Commerce Platform CI/CD"
-      numExecutors: 2
-      mode: NORMAL
-      scmCheckoutRetryCount: 3
-      
-      clouds:
-        - kubernetes:
-            name: "kubernetes"
-            serverUrl: "https://kubernetes.default"
-            namespace: "jenkins"
-            jenkinsUrl: "http://jenkins:8080"
-            jenkinsTunnel: "jenkins-agent:50000"
-            containerCapStr: 10
-            maxRequestsPerHostStr: 32
-            retentionTimeout: 5
-            connectTimeout: 10
-            readTimeout: 20
-            
-            templates:
-              - name: "nodejs"
-                label: "nodejs"
-                nodeUsageMode: EXCLUSIVE
-                containers:
-                  - name: "nodejs"
-                    image: "node:18-alpine"
-                    ttyEnabled: true
-                    command: "/bin/sh -c"
-                    args: "cat"
-                    resourceRequestCpu: "100m"
-                    resourceRequestMemory: "256Mi"
-                    resourceLimitCpu: "500m"
-                    resourceLimitMemory: "512Mi"
-                    
-              - name: "dotnet"
-                label: "dotnet"
-                nodeUsageMode: EXCLUSIVE
-                containers:
-                  - name: "dotnet"
-                    image: "mcr.microsoft.com/dotnet/sdk:8.0"
-                    ttyEnabled: true
-                    command: "/bin/sh -c"
-                    args: "cat"
-                    resourceRequestCpu: "100m"
-                    resourceRequestMemory: "256Mi"
-                    resourceLimitCpu: "500m"
-                    resourceLimitMemory: "512Mi"
-                    
-              - name: "golang"
-                label: "golang"
-                nodeUsageMode: EXCLUSIVE
-                containers:
-                  - name: "golang"
-                    image: "golang:1.21-alpine"
-                    ttyEnabled: true
-                    command: "/bin/sh -c"
-                    args: "cat"
-                    resourceRequestCpu: "100m"
-                    resourceRequestMemory: "256Mi"
-                    resourceLimitCpu: "500m"
-                    resourceLimitMemory: "512Mi"
-                    
-              - name: "docker"
-                label: "docker"
-                nodeUsageMode: EXCLUSIVE
-                containers:
-                  - name: "docker"
-                    image: "docker:dind"
-                    ttyEnabled: true
-                    privileged: true
-                    resourceRequestCpu: "100m"
-                    resourceRequestMemory: "256Mi"
-                    resourceLimitCpu: "1000m"
-                    resourceLimitMemory: "1Gi"
-      
-      security:
-        globalJobDslSecurityConfiguration:
-          useScriptSecurity: false
-    
-    credentials:
-      system:
-        domainCredentials:
-          - credentials:
-              - usernamePassword:
-                  scope: GLOBAL
-                  id: "docker-registry"
-                  username: "${DOCKER_REGISTRY_USER}"
-                  password: "${DOCKER_REGISTRY_PASS}"
-                  description: "Docker Registry Credentials"
-              - string:
-                  scope: GLOBAL
-                  id: "vault-token"
-                  secret: "${VAULT_TOKEN}"
-                  description: "HashiCorp Vault Token"
-              - string:
-                  scope: GLOBAL
-                  id: "argocd-token"
-                  secret: "${ARGOCD_TOKEN}"
-                  description: "ArgoCD API Token"
-              - file:
-                  scope: GLOBAL
-                  id: "kubeconfig"
-                  fileName: "kubeconfig"
-                  secretBytes: "${KUBECONFIG_CONTENT}"
-                  description: "Kubernetes Config"
-    
-    unclassified:
-      location:
-        url: "https://jenkins.ecommerce.local"
-      
-      slackNotifier:
-        teamDomain: "your-team"
-        token: "${SLACK_TOKEN}"
-        room: "#deployments"
-      
-      sonarGlobalConfiguration:
-        installations:
-          - name: "SonarQube"
-            serverUrl: "http://sonarqube:9000"
-            credentialsId: "sonarqube-token"
-    
-    jobs:
-      - script: |
-          multibranchPipelineJob('ecommerce-pipeline') {
-            branchSources {
-              git {
-                id('ecommerce-repo')
-                remote('https://github.com/your-org/ecommerce.git')
-                credentialsId('github-credentials')
-              }
-            }
-            factory {
-              workflowBranchProjectFactory {
-                scriptPath('ci-cd/jenkins/Jenkinsfile')
-              }
-            }
-            triggers {
-              periodicFolderTrigger {
-                interval('1m')
-              }
-            }
-          }
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: jenkins
+  name: jenkins-stable
   namespace: jenkins
+  labels:
+    app: jenkins-stable
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: jenkins
+      app: jenkins-stable
   template:
     metadata:
       labels:
-        app: jenkins
+        app: jenkins-stable
     spec:
       serviceAccountName: jenkins
       securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
         fsGroup: 1000
       containers:
       - name: jenkins
-        image: jenkins/jenkins:2.426.1-lts
+        image: jenkins/jenkins:lts
         ports:
         - containerPort: 8080
           name: http
         - containerPort: 50000
           name: agent
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
         env:
         - name: JAVA_OPTS
-          value: "-Djenkins.install.runSetupWizard=false -Xmx512m"
-        - name: CASC_JENKINS_CONFIG
-          value: "/var/jenkins_home/casc_configs/jenkins.yaml"
-        - name: DOCKER_REGISTRY_USER
-          valueFrom:
-            secretKeyRef:
-              name: jenkins-secrets
-              key: docker-registry-user
-        - name: DOCKER_REGISTRY_PASS
-          valueFrom:
-            secretKeyRef:
-              name: jenkins-secrets
-              key: docker-registry-pass
-        - name: VAULT_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: jenkins-secrets
-              key: vault-token
-        - name: ARGOCD_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: jenkins-secrets
-              key: argocd-token
-        - name: KUBECONFIG_CONTENT
-          valueFrom:
-            secretKeyRef:
-              name: jenkins-secrets
-              key: kubeconfig
-        - name: SLACK_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: jenkins-secrets
-              key: slack-token
+          value: "-Xmx1g -Djenkins.install.runSetupWizard=false -Dhudson.security.csrf.GlobalCrumbIssuerConfiguration.DISABLE_CSRF_PROTECTION=true"
+        - name: JENKINS_OPTS
+          value: "--httpPort=8080"
         volumeMounts:
         - name: jenkins-home
           mountPath: /var/jenkins_home
-        - name: jenkins-config
-          mountPath: /var/jenkins_home/casc_configs
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
+        - name: admin-scripts
+          mountPath: /var/jenkins_home/init.groovy.d
         livenessProbe:
           httpGet:
-            path: /login
+            path: /
+            port: 8080
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /
             port: 8080
           initialDelaySeconds: 60
           periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /login
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 5
+          failureThreshold: 10
       volumes:
       - name: jenkins-home
         persistentVolumeClaim:
-          claimName: jenkins-pvc
-      - name: jenkins-config
+          claimName: jenkins-pvc-fresh
+      - name: admin-scripts
         configMap:
-          name: jenkins-config
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: jenkins
-  namespace: jenkins
-spec:
-  type: ClusterIP
-  ports:
-  - port: 8080
-    targetPort: 8080
-    name: http
-  - port: 50000
-    targetPort: 50000
-    name: agent
-  selector:
-    app: jenkins
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: jenkins-agent
-  namespace: jenkins
-spec:
-  type: ClusterIP
-  ports:
-  - port: 50000
-    targetPort: 50000
-    name: agent
-  selector:
-    app: jenkins
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: jenkins-ingress
-  namespace: jenkins
-  annotations:
-    kubernetes.io/ingress.class: nginx
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
-spec:
-  tls:
-  - hosts:
-    - jenkins.ecommerce.local
-    secretName: jenkins-tls
-  rules:
-  - host: jenkins.ecommerce.local
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: jenkins
-            port:
-              number: 8080
+          name: jenkins-admin-config

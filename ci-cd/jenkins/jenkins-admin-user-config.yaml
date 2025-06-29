@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jenkins-admin-config
+  namespace: jenkins
+data:
+  01-create-admin.groovy: |
+    #!groovy
+    import jenkins.model.*
+    import hudson.security.*
+    
+    def instance = Jenkins.getInstance()
+    
+    // Create admin user if it doesn't exist
+    def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+    instance.setSecurityRealm(hudsonRealm)
+    
+    try {
+        def user = hudsonRealm.createAccount("admin", "admin123!")
+        user.setFullName("Administrator")
+        user.setDescription("Jenkins Administrator")
+        user.addProperty(new hudson.tasks.Mailer.UserProperty("admin@ecommerce.local"))
+        println "Admin user created successfully!"
+    } catch (Exception e) {
+        println "Admin user already exists or error: " + e.getMessage()
+    }
+    
+    // Set authorization strategy
+    def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+    strategy.setDenyAnonymousReadAccess(false)  // Allow anonymous read for easier access
+    instance.setAuthorizationStrategy(strategy)
+    
+    // Save configuration
+    instance.save()
+    
+    println "Jenkins configuration updated!"
+    println "Username: admin"
+    println "Password: admin123!"
