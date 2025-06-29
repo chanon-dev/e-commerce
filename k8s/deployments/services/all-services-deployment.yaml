@@ -1,0 +1,296 @@
+# Inventory Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-service
+  namespace: ecommerce
+  labels:
+    app: inventory-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inventory-service
+  template:
+    metadata:
+      labels:
+        app: inventory-service
+        tier: backend
+    spec:
+      containers:
+      - name: inventory-service
+        image: ecommerce/inventory-service:latest
+        ports:
+        - containerPort: 3007
+        env:
+        - name: PORT
+          value: "3007"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: database-secrets
+              key: inventory-db-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service
+  namespace: ecommerce
+spec:
+  ports:
+  - port: 3007
+    targetPort: 3007
+  selector:
+    app: inventory-service
+
+---
+# Shipping Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipping-service
+  namespace: ecommerce
+  labels:
+    app: shipping-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shipping-service
+  template:
+    metadata:
+      labels:
+        app: shipping-service
+        tier: backend
+    spec:
+      containers:
+      - name: shipping-service
+        image: ecommerce/shipping-service:latest
+        ports:
+        - containerPort: 3008
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3008"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shipping-service
+  namespace: ecommerce
+spec:
+  ports:
+  - port: 3008
+    targetPort: 3008
+  selector:
+    app: shipping-service
+
+---
+# Promotion Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: promotion-service
+  namespace: ecommerce
+  labels:
+    app: promotion-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: promotion-service
+  template:
+    metadata:
+      labels:
+        app: promotion-service
+        tier: backend
+    spec:
+      containers:
+      - name: promotion-service
+        image: ecommerce/promotion-service:latest
+        ports:
+        - containerPort: 3009
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          value: "Production"
+        - name: ASPNETCORE_URLS
+          value: "http://+:3009"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: promotion-service
+  namespace: ecommerce
+spec:
+  ports:
+  - port: 3009
+    targetPort: 3009
+  selector:
+    app: promotion-service
+
+---
+# Review Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: review-service
+  namespace: ecommerce
+  labels:
+    app: review-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: review-service
+  template:
+    metadata:
+      labels:
+        app: review-service
+        tier: backend
+    spec:
+      containers:
+      - name: review-service
+        image: ecommerce/review-service:latest
+        ports:
+        - containerPort: 3010
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3010"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: review-service
+  namespace: ecommerce
+spec:
+  ports:
+  - port: 3010
+    targetPort: 3010
+  selector:
+    app: review-service
+
+---
+# Notification Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: ecommerce
+  labels:
+    app: notification-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      labels:
+        app: notification-service
+        tier: backend
+    spec:
+      containers:
+      - name: notification-service
+        image: ecommerce/notification-service:latest
+        ports:
+        - containerPort: 3011
+        env:
+        - name: PORT
+          value: "3011"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: ecommerce
+spec:
+  ports:
+  - port: 3011
+    targetPort: 3011
+  selector:
+    app: notification-service
+
+---
+# Admin Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-service
+  namespace: ecommerce
+  labels:
+    app: admin-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: admin-service
+  template:
+    metadata:
+      labels:
+        app: admin-service
+        tier: backend
+    spec:
+      containers:
+      - name: admin-service
+        image: ecommerce/admin-service:latest
+        ports:
+        - containerPort: 3012
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3012"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-service
+  namespace: ecommerce
+spec:
+  ports:
+  - port: 3012
+    targetPort: 3012
+  selector:
+    app: admin-service
